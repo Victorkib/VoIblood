@@ -8,18 +8,25 @@ import { connectDB } from '@/lib/db'
 import Request from '@/lib/models/Request'
 import Organization from '@/lib/models/Organization'
 import { v4 as uuidv4 } from 'crypto'
+import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
+import { sendBloodRequestNotification } from '@/lib/email-service'
+import { logAuditEvent, AUDIT_ACTIONS, AUDIT_SEVERITY, getAuditContextFromRequest } from '@/lib/audit-logger'
 
 /**
- * GET /api/requests
- * Query parameters:
+ * POST /api/requests
+ * Body:
+ * - requestingOrganizationName (required)
+ * - patientName (required)
+ * - bloodRequirements (required) - Array of { bloodType, quantity }
+ * - urgency (required)
  * - organizationId (required)
- * - status (optional)
- * - urgency (optional)
- * - search (optional)
- * - page (optional, default: 1)
- * - limit (optional, default: 10)
  */
-export async function GET(request) {
+export async function POST(request) {
+  const rateLimitInfo = getRateLimitInfo(request, 'create')
+  if (!rateLimitInfo.allowed) {
+    return NextResponse.json(createRateLimitError(rateLimitInfo), { status: 429 })
+  }
+
   try {
     await connectDB()
 
@@ -145,6 +152,40 @@ export async function POST(request) {
       sourceOrganizationId,
       requestingOrganizationId,
     })
+
+    // Send notification email (non-blocking)
+    try {
+      await sendBloodRequestNotification(newRequest, sourceOrganizationId)
+    } catch (emailErr) {
+      console.warn('Failed to send blood request notification email:', emailErr.message)
+      // Don't fail the request if email fails
+    }
+
+    // Log audit event (non-blocking)
+    try {
+      const auditContext = getAuditContextFromRequest(request)
+      await logAuditEvent({
+        action: AUDIT_ACTIONS.REQUEST_CREATE,
+        userId: body.userId || 'system',
+        organizationId: sourceOrganizationId,
+        resourceType: 'request',
+        resourceId: newRequest._id.toString(),
+        severity: AUDIT_SEVERITY.HIGH, // Blood requests are critical
+        changes: {
+          created: {
+            requestId: newRequest.requestId,
+            patientName: newRequest.patientName,
+            urgency: newRequest.urgency,
+            bloodRequirements: newRequest.bloodRequirements,
+          },
+        },
+        description: `Blood request created: ${newRequest.patientName} - ${newRequest.urgency} (${newRequest.bloodRequirements.length} types)`,
+        ...auditContext,
+      })
+    } catch (auditErr) {
+      console.warn('Failed to log audit event:', auditErr.message)
+      // Don't fail the request if audit logging fails
+    }
 
     return NextResponse.json(
       {

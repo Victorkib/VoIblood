@@ -7,6 +7,10 @@ import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import Donor from '@/lib/models/Donor'
 import Organization from '@/lib/models/Organization'
+import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
+import { sendDonorRegistrationEmail } from '@/lib/email-service'
+import { logAuditEvent, AUDIT_ACTIONS, AUDIT_SEVERITY, getAuditContextFromRequest } from '@/lib/audit-logger'
+import { canAccessResource, canPerformAction } from '@/lib/rbac'
 
 /**
  * GET /api/donors
@@ -19,16 +23,17 @@ import Organization from '@/lib/models/Organization'
  * - limit (optional, default: 10)
  */
 export async function GET(request) {
+  // Check rate limit
+  const rateLimitInfo = getRateLimitInfo(request, 'default')
+  if (!rateLimitInfo.allowed) {
+    return NextResponse.json(createRateLimitError(rateLimitInfo), { status: 429 })
+  }
+
   try {
     await connectDB()
 
     const { searchParams } = new URL(request.url)
     const organizationId = searchParams.get('organizationId')
-    const bloodType = searchParams.get('bloodType')
-    const status = searchParams.get('status')
-    const search = searchParams.get('search')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '10')
 
     if (!organizationId) {
       return NextResponse.json(
@@ -36,6 +41,12 @@ export async function GET(request) {
         { status: 400 }
       )
     }
+
+    const bloodType = searchParams.get('bloodType')
+    const status = searchParams.get('status')
+    const search = searchParams.get('search')
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '10')
 
     // Build query
     const query = { organizationId }
@@ -89,6 +100,12 @@ export async function GET(request) {
  * Create a new donor
  */
 export async function POST(request) {
+  // Check rate limit for creates
+  const rateLimitInfo = getRateLimitInfo(request, 'create')
+  if (!rateLimitInfo.allowed) {
+    return NextResponse.json(createRateLimitError(rateLimitInfo), { status: 429 })
+  }
+
   try {
     await connectDB()
 
@@ -100,6 +117,15 @@ export async function POST(request) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
+      )
+    }
+
+    // RBAC check - user must have donor.create permission
+    const user = body.user || { role: 'staff', organizationId }
+    if (!canPerformAction(user, 'create', 'donors') || !canAccessResource(user, organizationId)) {
+      return NextResponse.json(
+        { error: 'Forbidden - insufficient permissions to create donors' },
+        { status: 403 }
       )
     }
 
@@ -130,6 +156,40 @@ export async function POST(request) {
     // Update organization stats
     organization.totalDonorsRegistered = (organization.totalDonorsRegistered || 0) + 1
     await organization.save()
+
+    // Send registration confirmation email (non-blocking)
+    try {
+      await sendDonorRegistrationEmail(donor, organizationId)
+    } catch (emailErr) {
+      console.warn('Failed to send donor registration email:', emailErr.message)
+      // Don't fail the request if email fails
+    }
+
+    // Log audit event (non-blocking)
+    try {
+      const auditContext = getAuditContextFromRequest(request)
+      await logAuditEvent({
+        action: AUDIT_ACTIONS.DONOR_CREATE,
+        userId: body.userId || 'system',
+        organizationId,
+        resourceType: 'donor',
+        resourceId: donor._id.toString(),
+        severity: AUDIT_SEVERITY.MEDIUM,
+        changes: {
+          created: {
+            firstName: donor.firstName,
+            lastName: donor.lastName,
+            bloodType: donor.bloodType,
+            email: donor.email,
+          },
+        },
+        description: `New donor registered: ${donor.firstName} ${donor.lastName} (${donor.bloodType})`,
+        ...auditContext,
+      })
+    } catch (auditErr) {
+      console.warn('Failed to log audit event:', auditErr.message)
+      // Don't fail the request if audit logging fails
+    }
 
     return NextResponse.json(
       {

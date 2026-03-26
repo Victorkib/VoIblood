@@ -7,20 +7,25 @@ import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import BloodInventory from '@/lib/models/BloodInventory'
 import Organization from '@/lib/models/Organization'
+import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
 
 /**
- * GET /api/inventory
- * Query parameters:
+ * POST /api/inventory
+ * Body:
+ * - donorName (required)
+ * - bloodType (required)
+ * - volume (required)
+ * - collectionDate (required)
+ * - collectionMethod (required)
+ * - testResults (required)
  * - organizationId (required)
- * - bloodType (optional)
- * - status (optional)
- * - component (optional)
- * - expiryDaysRange (optional) - 'expired', 'critical', 'warning', 'good'
- * - search (optional)
- * - page (optional, default: 1)
- * - limit (optional, default: 10)
  */
-export async function GET(request) {
+export async function POST(request) {
+  const rateLimitInfo = getRateLimitInfo(request, 'create')
+  if (!rateLimitInfo.allowed) {
+    return NextResponse.json(createRateLimitError(rateLimitInfo), { status: 429 })
+  }
+
   try {
     await connectDB()
 

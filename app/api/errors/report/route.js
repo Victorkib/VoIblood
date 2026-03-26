@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
+import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
+import { sendErrorAlert } from '@/lib/email-service'
 
 /**
  * POST /api/errors/report
  * Reports client-side errors for monitoring
  */
 export async function POST(request) {
+  const rateLimitInfo = getRateLimitInfo(request, 'report')
+  if (!rateLimitInfo.allowed) {
+    return NextResponse.json(createRateLimitError(rateLimitInfo), { status: 429 })
+  }
+
   try {
     const body = await request.json()
     const { message, stack, timestamp, url, userId, action } = body
@@ -61,7 +68,8 @@ export async function POST(request) {
     // Email admin for critical errors
     if (errorLog.severity === 'critical' && process.env.ADMIN_EMAIL) {
       try {
-        await sendErrorNotification(errorLog)
+        const organizationId = body.organizationId || 'system'
+        await sendErrorAlert(errorLog, organizationId)
       } catch (err) {
         console.error('Failed to send error notification:', err)
       }

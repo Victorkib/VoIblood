@@ -1,8 +1,6 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { createBrowserClient } from '@/lib/supabase'
-import { isSupabaseConfigured } from '@/lib/supabase'
 
 const AuthContext = createContext(undefined)
 
@@ -11,9 +9,10 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true)
   const [supabase] = useState(() => {
     try {
+      const { createBrowserClient } = require('@/lib/supabase')
       return createBrowserClient()
     } catch (error) {
-      console.warn('Failed to initialize Supabase client:', error)
+      console.warn('Supabase not available:', error.message)
       return null
     }
   })
@@ -36,9 +35,8 @@ export function AuthProvider({ children }) {
 
     initAuth()
 
-    // Set up Supabase auth state listener only if configured
-    if (!supabase || !isSupabaseConfigured()) {
-      setIsLoading(false)
+    // Set up Supabase auth state listener only if supabase exists and has the method
+    if (!supabase || typeof supabase?.auth?.onAuthStateChange !== 'function') {
       return
     }
 
@@ -58,7 +56,7 @@ export function AuthProvider({ children }) {
           }
         }
       )
-      unsubscribe = () => subscription.unsubscribe()
+      unsubscribe = () => subscription?.unsubscribe?.()
     } catch (error) {
       console.warn('Failed to set up auth state listener:', error)
     }
@@ -104,7 +102,7 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
-      if (supabase && isSupabaseConfigured()) {
+      if (supabase && typeof supabase?.auth?.signOut === 'function') {
         await supabase.auth.signOut()
       }
     } catch (error) {
