@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/components/auth/auth-provider'
+import { NewRequestModal } from '@/components/modals/new-request-modal'
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState([])
@@ -13,6 +14,7 @@ export default function RequestsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const { user } = useAuth()
 
   const statuses = {
@@ -101,6 +103,11 @@ export default function RequestsPage() {
     return requirements.reduce((sum, r) => sum + r.quantity, 0)
   }
 
+  const handleCreateRequestSuccess = (newRequest) => {
+    setRequests((prev) => [newRequest, ...prev])
+    setIsModalOpen(false)
+  }
+
   if (!user) {
     return (
       <div className="space-y-6">
@@ -119,8 +126,15 @@ export default function RequestsPage() {
           <h1 className="text-3xl font-bold text-foreground">Hospital Requests</h1>
           <p className="mt-2 text-foreground/60">Manage blood requests from hospitals and healthcare facilities</p>
         </div>
-        <Button>New Request</Button>
+        <Button onClick={() => setIsModalOpen(true)}>New Request</Button>
       </div>
+
+      <NewRequestModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleCreateRequestSuccess}
+        organizationId={user.organizationId || user.id}
+      />
 
       {/* Summary Cards */}
       {stats && (

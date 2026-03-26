@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Plus, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/components/auth/auth-provider'
+import { RecordCollectionModal } from '@/components/modals/record-collection-modal'
 
 export default function InventoryPage() {
   const [inventory, setInventory] = useState([])
@@ -13,6 +14,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const { user } = useAuth()
 
   useEffect(() => {
@@ -92,6 +94,11 @@ export default function InventoryPage() {
     return { text: 'Available', color: 'bg-accent/10 text-accent' }
   }
 
+  const handleRecordSuccess = (newUnit) => {
+    setInventory((prev) => [newUnit, ...prev])
+    setIsModalOpen(false)
+  }
+
   if (!user) {
     return (
       <div className="space-y-6">
@@ -110,11 +117,18 @@ export default function InventoryPage() {
           <h1 className="text-3xl font-bold text-foreground">Blood Inventory</h1>
           <p className="mt-2 text-foreground/60">Track all blood units and stock levels</p>
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setIsModalOpen(true)}>
           <Plus className="w-4 h-4" />
           Record Collection
         </Button>
       </div>
+
+      <RecordCollectionModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleRecordSuccess}
+        organizationId={user.organizationId || user.id}
+      />
 
       {/* Summary Cards */}
       {stats && (

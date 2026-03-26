@@ -4,10 +4,104 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Bell, Lock, Users, Shield } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useAuth } from '@/components/auth/auth-provider'
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('account')
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    organization: '',
+  })
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  })
+  const { user: authUser } = useAuth()
+
+  useEffect(() => {
+    if (authUser) {
+      setUser(authUser)
+      setFormData({
+        fullName: authUser.name || '',
+        email: authUser.email || '',
+        organization: authUser.organizationName || '',
+      })
+    }
+  }, [authUser])
+
+  const handleAccountChange = (e) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handlePasswordChange = (e) => {
+    const { name, value } = e.target
+    setPasswordData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleSaveAccount = async () => {
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const response = await fetch('/api/settings/user', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+
+      if (!response.ok) throw new Error('Failed to update account')
+
+      setSuccess('Account updated successfully')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      console.error('[v0] Save account error:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleChangePassword = async () => {
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      if (passwordData.newPassword !== passwordData.confirmPassword) {
+        throw new Error('Passwords do not match')
+      }
+
+      if (passwordData.newPassword.length < 8) {
+        throw new Error('Password must be at least 8 characters')
+      }
+
+      const response = await fetch('/api/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(passwordData),
+      })
+
+      if (!response.ok) throw new Error('Failed to change password')
+
+      setSuccess('Password changed successfully')
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      console.error('[v0] Change password error:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const tabs = [
     { id: 'account', label: 'Account', icon: Lock },
@@ -15,6 +109,25 @@ export default function SettingsPage() {
     { id: 'team', label: 'Team & Users', icon: Users },
     { id: 'security', label: 'Security', icon: Shield },
   ]
+
+  if (!authUser) {
+    return (
+      <div className="space-y-6">
+        <Card className="p-6 border-red-500/50 bg-red-500/5">
+          <p className="text-red-600">Please log in to access settings</p>
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+      <div className="space-y-6">
+        <Card className="p-6 border-red-500/50 bg-red-500/5">
+          <p className="text-red-600">Please log in to access settings</p>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -48,25 +161,51 @@ export default function SettingsPage() {
       {/* Account Settings */}
       {activeTab === 'account' && (
         <div className="space-y-6">
+          {error && (
+            <Card className="p-4 border-red-500/50 bg-red-500/5">
+              <p className="text-sm text-red-700">{error}</p>
+            </Card>
+          )}
+          {success && (
+            <Card className="p-4 border-green-500/50 bg-green-500/5">
+              <p className="text-sm text-green-700">{success}</p>
+            </Card>
+          )}
+
           <Card className="p-6">
             <h3 className="text-lg font-semibold text-foreground mb-6">Account Information</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">Full Name</label>
-                  <Input defaultValue="John Doe" />
+                  <Input
+                    name="fullName"
+                    value={formData.fullName}
+                    onChange={handleAccountChange}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">Email</label>
-                  <Input type="email" defaultValue="john@hospital.com" />
+                  <Input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleAccountChange}
+                  />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Organization</label>
-                <Input defaultValue="City Blood Bank" />
+                <Input
+                  name="organization"
+                  value={formData.organization}
+                  onChange={handleAccountChange}
+                />
               </div>
               <div className="pt-4">
-                <Button>Save Changes</Button>
+                <Button onClick={handleSaveAccount} disabled={loading}>
+                  {loading ? 'Saving...' : 'Save Changes'}
+                </Button>
               </div>
             </div>
           </Card>
@@ -76,17 +215,34 @@ export default function SettingsPage() {
             <div className="space-y-4 max-w-md">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Current Password</label>
-                <Input type="password" />
+                <Input
+                  type="password"
+                  name="currentPassword"
+                  value={passwordData.currentPassword}
+                  onChange={handlePasswordChange}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">New Password</label>
-                <Input type="password" />
+                <Input
+                  type="password"
+                  name="newPassword"
+                  value={passwordData.newPassword}
+                  onChange={handlePasswordChange}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Confirm Password</label>
-                <Input type="password" />
+                <Input
+                  type="password"
+                  name="confirmPassword"
+                  value={passwordData.confirmPassword}
+                  onChange={handlePasswordChange}
+                />
               </div>
-              <Button>Update Password</Button>
+              <Button onClick={handleChangePassword} disabled={loading}>
+                {loading ? 'Updating...' : 'Update Password'}
+              </Button>
             </div>
           </Card>
         </div>

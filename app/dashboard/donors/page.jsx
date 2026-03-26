@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Plus, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/components/auth/auth-provider'
+import { AddDonorModal } from '@/components/modals/add-donor-modal'
 
 export default function DonorsPage() {
   const [donors, setDonors] = useState([])
@@ -13,6 +14,7 @@ export default function DonorsPage() {
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const { user } = useAuth()
 
   useEffect(() => {
@@ -63,6 +65,11 @@ export default function DonorsPage() {
     return `${diffDays} days ago`
   }
 
+  const handleAddDonorSuccess = (newDonor) => {
+    setDonors((prev) => [newDonor, ...prev])
+    setIsModalOpen(false)
+  }
+
   if (!user) {
     return (
       <div className="space-y-6">
@@ -81,11 +88,18 @@ export default function DonorsPage() {
           <h1 className="text-3xl font-bold text-foreground">Donors</h1>
           <p className="mt-2 text-foreground/60">Manage donor information and eligibility</p>
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setIsModalOpen(true)}>
           <Plus className="w-4 h-4" />
           Add Donor
         </Button>
       </div>
+
+      <AddDonorModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleAddDonorSuccess}
+        organizationId={user.organizationId || user.id}
+      />
 
       {/* Search and Filter */}
       <Card className="p-4">
