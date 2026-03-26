@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -21,18 +21,19 @@ function LoginForm() {
   const [error, setError] = useState('')
 
   // Redirect if already authenticated
-  if (isAuthenticated) {
-    router.push('/dashboard')
-    return null
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push('/dashboard')
+    }
+  }, [isAuthenticated, router])
 
   // Get error from URL params
-  useState(() => {
+  useEffect(() => {
     const urlError = searchParams.get('error')
     if (urlError) {
       setError(decodeURIComponent(urlError))
     }
-  })
+  }, [searchParams])
 
   async function handleSubmit(e) {
     e.preventDefault()

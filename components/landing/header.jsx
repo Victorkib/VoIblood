@@ -35,10 +35,10 @@ export function LandingHeader() {
         {/* CTA Buttons */}
         <div className="flex items-center gap-3">
           <Button variant="outline" asChild className="hidden sm:inline-flex">
-            <Link href="/login">Sign In</Link>
+            <Link href="/auth/login">Sign In</Link>
           </Button>
           <Button asChild>
-            <Link href="/signup">Get Started</Link>
+            <Link href="/auth/signup">Get Started</Link>
           </Button>
         </div>
       </nav>
