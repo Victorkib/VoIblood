@@ -1,9 +1,107 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Plus, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { useAuth } from '@/components/auth/auth-provider'
 
 export default function InventoryPage() {
+  const [inventory, setInventory] = useState([])
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [search, setSearch] = useState('')
+  const { user } = useAuth()
+
+  useEffect(() => {
+    const fetchInventory = async () => {
+      try {
+        if (!user) return
+
+        const organizationId = user.organizationId || user.id
+        const params = new URLSearchParams({
+          organizationId,
+          search: search || '',
+          page: '1',
+          limit: '10',
+        })
+
+        const response = await fetch(`/api/inventory?${params}`)
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch inventory')
+        }
+
+        const data = await response.json()
+        setInventory(data.data)
+        setError(null)
+      } catch (err) {
+        console.error('[v0] Fetch inventory error:', err)
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    const debounceTimer = setTimeout(() => {
+      setLoading(true)
+      fetchInventory()
+    }, 300)
+
+    return () => clearTimeout(debounceTimer)
+  }, [user, search])
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        if (!user) return
+
+        const organizationId = user.organizationId || user.id
+        const response = await fetch(`/api/dashboard/stats?organizationId=${organizationId}`)
+
+        if (!response.ok) throw new Error('Failed to fetch stats')
+
+        const data = await response.json()
+        setStats(data.data)
+      } catch (err) {
+        console.error('[v0] Fetch stats error:', err)
+      }
+    }
+
+    fetchStats()
+  }, [user])
+
+  const formatDate = (date) => {
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+  }
+
+  const getExpiryStatus = (expiryDate) => {
+    const now = new Date()
+    const expiry = new Date(expiryDate)
+    const diffDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))
+
+    if (diffDays < 0) return { text: 'Expired', color: 'bg-destructive/10 text-destructive' }
+    if (diffDays <= 3) return { text: 'Critical', color: 'bg-red-500/10 text-red-700' }
+    if (diffDays <= 7) return { text: 'Warning', color: 'bg-yellow-500/10 text-yellow-700' }
+    return { text: 'Available', color: 'bg-accent/10 text-accent' }
+  }
+
+  if (!user) {
+    return (
+      <div className="space-y-6">
+        <Card className="p-6 border-red-500/50 bg-red-500/5">
+          <p className="text-red-600">Please log in to view inventory</p>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -19,19 +117,21 @@ export default function InventoryPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Units', value: '1,247', color: 'bg-secondary/10 text-secondary' },
-          { label: 'Available', value: '1,189', color: 'bg-accent/10 text-accent' },
-          { label: 'Reserved', value: '58', color: 'bg-primary/10 text-primary' },
-          { label: 'Low Stock', value: '5 Types', color: 'bg-destructive/10 text-destructive' },
-        ].map((stat, idx) => (
-          <Card key={idx} className="p-4">
-            <p className="text-sm text-foreground/60 mb-2">{stat.label}</p>
-            <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-          </Card>
-        ))}
-      </div>
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Units', value: stats.inventory.totalUnits, color: 'bg-secondary/10 text-secondary' },
+            { label: 'Available', value: stats.inventory.totalUnits, color: 'bg-accent/10 text-accent' },
+            { label: 'Expiring Soon', value: stats.inventory.alerts.expiring, color: 'bg-primary/10 text-primary' },
+            { label: 'Expired', value: stats.inventory.alerts.expired, color: 'bg-destructive/10 text-destructive' },
+          ].map((stat, idx) => (
+            <Card key={idx} className="p-4">
+              <p className="text-sm text-foreground/60 mb-2">{stat.label}</p>
+              <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Search and Filter */}
       <Card className="p-4">
@@ -40,55 +140,79 @@ export default function InventoryPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
             <Input
               type="search"
-              placeholder="Search by unit ID or blood type..."
+              placeholder="Search by unit ID or donor name..."
               className="pl-10"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
         </div>
       </Card>
 
       {/* Inventory Table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="border-b border-border bg-secondary/5">
-              <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Unit ID</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Blood Type</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Collection Date</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Expiry Date</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {/* Placeholder rows */}
-              {[1, 2, 3, 4, 5].map((i) => (
-                <tr key={i} className="hover:bg-secondary/5 transition">
-                  <td className="px-6 py-4 text-sm font-medium text-foreground">BLU-{String(100000 + i).slice(0, 5)}</td>
-                  <td className="px-6 py-4 text-sm">
-                    <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                      {['O+', 'A+', 'B+', 'AB+', 'O-'][i % 5]}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-foreground/60">2024-03-{10 + i}</td>
-                  <td className="px-6 py-4 text-sm text-foreground/60">2024-04-{10 + i}</td>
-                  <td className="px-6 py-4 text-sm">
-                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
-                      i === 1 ? 'bg-destructive/10 text-destructive' : 'bg-accent/10 text-accent'
-                    }`}>
-                      {i === 1 ? 'Near Expiry' : 'Available'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm">
-                    <button className="text-primary hover:underline">View</button>
-                  </td>
+      {error && (
+        <Card className="p-6 border-red-500/50 bg-red-500/5">
+          <p className="text-red-600">Error: {error}</p>
+        </Card>
+      )}
+
+      {loading && (
+        <Card className="overflow-hidden">
+          <div className="p-6 text-center text-foreground/60">Loading inventory...</div>
+        </Card>
+      )}
+
+      {!loading && !error && (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-border bg-secondary/5">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Unit ID</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Blood Type</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Collection Date</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Expiry Date</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Status</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {inventory.length > 0 ? (
+                  inventory.map((unit) => {
+                    const expiryStatus = getExpiryStatus(unit.expiryDate)
+                    return (
+                      <tr key={unit._id} className="hover:bg-secondary/5 transition">
+                        <td className="px-6 py-4 text-sm font-medium text-foreground">{unit.unitId}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                            {unit.bloodType}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-foreground/60">{formatDate(unit.collectionDate)}</td>
+                        <td className="px-6 py-4 text-sm text-foreground/60">{formatDate(unit.expiryDate)}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${expiryStatus.color}`}>
+                            {expiryStatus.text}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          <button className="text-primary hover:underline">View</button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-4 text-center text-foreground/60">
+                      No blood units found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   )
 }
