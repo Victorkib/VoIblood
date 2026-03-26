@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { X, Plus, Trash2 } from 'lucide-react'
+import { useFormValidation } from '@/lib/use-form-validation'
+import { FormField, FormError } from '@/components/ui/form-error'
 
 export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) {
   const [formData, setFormData] = useState({
@@ -20,6 +22,8 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [fieldErrors, setFieldErrors] = useState({})
+  const { validate } = useFormValidation('request')
 
   const bloodTypes = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']
   const urgencyLevels = ['routine', 'urgent', 'critical']
@@ -27,6 +31,9 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => ({ ...prev, [name]: null }))
+    }
   }
 
   const handleRequirementChange = (index, field, value) => {
@@ -38,6 +45,10 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
   }
 
   const addRequirement = () => {
+    if (formData.bloodRequirements.length >= 8) {
+      setError('Maximum 8 blood types can be requested')
+      return
+    }
     setFormData((prev) => ({
       ...prev,
       bloodRequirements: [...prev.bloodRequirements, { bloodType: 'O+', quantity: 1 }],
@@ -53,13 +64,29 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    
+    // Validate required fields
+    const errors = {}
+    if (!formData.requestingOrganizationName.trim()) errors.requestingOrganizationName = 'Organization name is required'
+    if (!formData.patientName.trim()) errors.patientName = 'Patient name is required'
+    if (!formData.medicalCondition.trim()) errors.medicalCondition = 'Medical condition is required'
+    if (formData.bloodRequirements.length === 0) {
+      setError('At least one blood requirement is needed')
+      return
+    }
+    if (formData.bloodRequirements.some((r) => !r.bloodType || r.quantity < 1)) {
+      setError('Please fill all blood requirements properly')
+      return
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setError('Please fix the errors below')
+      return
+    }
+
     setLoading(true)
     setError(null)
-
-    try {
-      if (formData.bloodRequirements.length === 0) {
-        throw new Error('At least one blood requirement is needed')
-      }
 
       const response = await fetch('/api/requests', {
         method: 'POST',
@@ -112,28 +139,27 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {error && (
-            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/50">
-              <p className="text-sm text-red-700">{error}</p>
+            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/50 text-sm text-red-700 flex items-start gap-2">
+              <span className="font-medium">Error:</span>
+              <span>{error}</span>
             </div>
           )}
 
           {/* Hospital/Organization Info */}
-          <div className="space-y-3">
+          <div className="space-y-4">
             <h3 className="font-semibold text-foreground">Hospital/Organization Details</h3>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Organization Name *</label>
+            <FormField label="Organization Name" error={fieldErrors.requestingOrganizationName} required>
               <Input
                 type="text"
                 name="requestingOrganizationName"
                 value={formData.requestingOrganizationName}
                 onChange={handleInputChange}
-                required
                 placeholder="City Hospital"
+                className={fieldErrors.requestingOrganizationName ? 'border-red-600' : ''}
               />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Phone</label>
+            </FormField>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField label="Phone">
                 <Input
                   type="tel"
                   name="requestingOrganizationPhone"
@@ -141,9 +167,8 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
                   onChange={handleInputChange}
                   placeholder="+1 (555) 000-0000"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Email</label>
+              </FormField>
+              <FormField label="Email">
                 <Input
                   type="email"
                   name="requestingOrganizationEmail"
@@ -151,27 +176,25 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
                   onChange={handleInputChange}
                   placeholder="contact@hospital.com"
                 />
-              </div>
+              </FormField>
             </div>
           </div>
 
           {/* Patient Info */}
-          <div className="space-y-3 border-t border-border pt-6">
+          <div className="space-y-4 border-t border-border pt-6">
             <h3 className="font-semibold text-foreground">Patient Information</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Patient Name *</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField label="Patient Name" error={fieldErrors.patientName} required>
                 <Input
                   type="text"
                   name="patientName"
                   value={formData.patientName}
                   onChange={handleInputChange}
-                  required
                   placeholder="Jane Smith"
+                  className={fieldErrors.patientName ? 'border-red-600' : ''}
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Age</label>
+              </FormField>
+              <FormField label="Age" hint="Optional">
                 <Input
                   type="number"
                   name="patientAge"
@@ -181,19 +204,18 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
                   min="0"
                   max="120"
                 />
-              </div>
+              </FormField>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Medical Condition *</label>
+            <FormField label="Medical Condition" error={fieldErrors.medicalCondition} required hint="e.g., Surgery recovery, Trauma">
               <Input
                 type="text"
                 name="medicalCondition"
                 value={formData.medicalCondition}
                 onChange={handleInputChange}
-                required
                 placeholder="Surgery recovery, Trauma, etc."
+                className={fieldErrors.medicalCondition ? 'border-red-600' : ''}
               />
-            </div>
+            </FormField>
           </div>
 
           {/* Blood Requirements */}

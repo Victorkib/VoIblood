@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { X } from 'lucide-react'
+import { useFormValidation } from '@/lib/use-form-validation'
+import { FormField, FormError } from '@/components/ui/form-error'
 
 export function RecordCollectionModal({ isOpen, onClose, onSuccess, organizationId }) {
   const [formData, setFormData] = useState({
@@ -23,6 +25,8 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [fieldErrors, setFieldErrors] = useState({})
+  const { validate } = useFormValidation('inventory')
 
   const bloodTypes = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']
   const testStatuses = ['negative', 'positive', 'inconclusive']
@@ -30,6 +34,9 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => ({ ...prev, [name]: null }))
+    }
   }
 
   const handleTestChange = (testName, value) => {
@@ -41,6 +48,20 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    
+    // Basic validation for required fields
+    const errors = {}
+    if (!formData.donorName.trim()) errors.donorName = 'Donor name is required'
+    if (!formData.bloodType) errors.bloodType = 'Blood type is required'
+    if (!formData.volume || parseInt(formData.volume) < 200) errors.volume = 'Volume must be at least 200ml'
+    if (!formData.collectionDate) errors.collectionDate = 'Collection date is required'
+    
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setError('Please fix the errors below')
+      return
+    }
+
     setLoading(true)
     setError(null)
 
@@ -97,45 +118,44 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {error && (
-            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/50">
-              <p className="text-sm text-red-700">{error}</p>
+            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/50 text-sm text-red-700 flex items-start gap-2">
+              <span className="font-medium">Error:</span>
+              <span>{error}</span>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Donor Name *</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField label="Donor Name" error={fieldErrors.donorName} required>
               <Input
                 type="text"
                 name="donorName"
                 value={formData.donorName}
                 onChange={handleInputChange}
-                required
                 placeholder="John Doe"
+                className={fieldErrors.donorName ? 'border-red-600' : ''}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Donor Email</label>
+            </FormField>
+            <FormField label="Donor Email" error={fieldErrors.donorEmail}>
               <Input
                 type="email"
                 name="donorEmail"
                 value={formData.donorEmail}
                 onChange={handleInputChange}
                 placeholder="john@example.com"
+                className={fieldErrors.donorEmail ? 'border-red-600' : ''}
               />
-            </div>
+            </FormField>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Blood Type *</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField label="Blood Type" error={fieldErrors.bloodType} required>
               <select
                 name="bloodType"
                 value={formData.bloodType}
                 onChange={handleInputChange}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                className={`w-full px-3 py-2 rounded-lg border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary ${fieldErrors.bloodType ? 'border-red-600' : 'border-border'}`}
               >
                 {bloodTypes.map((type) => (
                   <option key={type} value={type}>
@@ -143,9 +163,8 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
                   </option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Collection Method</label>
+            </FormField>
+            <FormField label="Collection Method">
               <select
                 name="collectionMethod"
                 value={formData.collectionMethod}
@@ -156,32 +175,32 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
                 <option value="apheresis">Apheresis</option>
                 <option value="plasmapheresis">Plasmapheresis</option>
               </select>
-            </div>
+            </FormField>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Volume (ml) *</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField label="Volume (ml)" error={fieldErrors.volume} required hint="Standard: 450ml (min: 200ml)">
               <Input
                 type="number"
                 name="volume"
                 value={formData.volume}
                 onChange={handleInputChange}
-                required
                 placeholder="450"
                 min="200"
+                max="500"
+                className={fieldErrors.volume ? 'border-red-600' : ''}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Collection Date *</label>
+            </FormField>
+            <FormField label="Collection Date" error={fieldErrors.collectionDate} required hint="Cannot be in the future">
               <Input
                 type="date"
                 name="collectionDate"
                 value={formData.collectionDate}
                 onChange={handleInputChange}
-                required
+                max={new Date().toISOString().split('T')[0]}
+                className={fieldErrors.collectionDate ? 'border-red-600' : ''}
               />
-            </div>
+            </FormField>
           </div>
 
           <div className="space-y-3 pt-4 border-t border-border">
