@@ -2,21 +2,31 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 const AuthContext = createContext(undefined)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [supabase] = useState(() => createBrowserClient())
+  const [supabase] = useState(() => {
+    try {
+      return createBrowserClient()
+    } catch (error) {
+      console.warn('Failed to initialize Supabase client:', error)
+      return null
+    }
+  })
 
   // Initialize auth state from API
   useEffect(() => {
     async function initAuth() {
       try {
         const res = await fetch('/api/auth/session')
-        const data = await res.json()
-        setUser(data.user)
+        if (res.ok) {
+          const data = await res.json()
+          setUser(data.user)
+        }
       } catch (error) {
         console.error('Auth initialization error:', error)
       } finally {
@@ -26,24 +36,35 @@ export function AuthProvider({ children }) {
 
     initAuth()
 
-    // Set up Supabase auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event)
-        
-        if (event === 'SIGNED_IN' && session) {
-          // Fetch user from API
-          const res = await fetch('/api/auth/session')
-          const data = await res.json()
-          setUser(data.user)
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null)
+    // Set up Supabase auth state listener only if configured
+    if (!supabase || !isSupabaseConfigured()) {
+      setIsLoading(false)
+      return
+    }
+
+    let unsubscribe
+    try {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log('Auth state changed:', event)
+          
+          if (event === 'SIGNED_IN' && session) {
+            // Fetch user from API
+            const res = await fetch('/api/auth/session')
+            const data = await res.json()
+            setUser(data.user)
+          } else if (event === 'SIGNED_OUT') {
+            setUser(null)
+          }
         }
-      }
-    )
+      )
+      unsubscribe = () => subscription.unsubscribe()
+    } catch (error) {
+      console.warn('Failed to set up auth state listener:', error)
+    }
 
     return () => {
-      subscription.unsubscribe()
+      if (unsubscribe) unsubscribe()
     }
   }, [supabase])
 
@@ -83,7 +104,9 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
-      await supabase.auth.signOut()
+      if (supabase && isSupabaseConfigured()) {
+        await supabase.auth.signOut()
+      }
     } catch (error) {
       console.error('Logout error:', error)
     } finally {
