@@ -304,3 +304,143 @@ This is an automated message from iBlood Blood Donation System.
     html,
   })
 }
+
+/**
+ * Get email service status
+ */
+export function getEmailServiceStatus() {
+  const hasGmail = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)
+  const hasMailjet = !!(process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY)
+  
+  return {
+    configured: hasGmail || hasMailjet,
+    primary: hasGmail ? 'gmail' : hasMailjet ? 'mailjet' : 'none',
+    gmail: hasGmail,
+    mailjet: hasMailjet,
+  }
+}
+
+/**
+ * Send blood request notification email
+ */
+export async function sendBloodRequestNotification(options) {
+  const { to, requestDetails, hospitalName, urgency } = options
+  
+  const subject = `🩸 ${urgency || 'Urgent'} Blood Request - ${hospitalName}`
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #C23030 0%, #8B0000 100%); color: white; padding: 20px; text-align: center; border-radius: 10px; }
+        .content { padding: 20px; background: #f9f9f9; margin-top: 20px; border-radius: 10px; }
+        .urgent { background: #fee; border-left: 4px solid #c00; padding: 15px; margin: 15px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>🩸 Blood Request Notification</h1>
+      </div>
+      <div class="content">
+        <p>A new blood request has been submitted:</p>
+        ${requestDetails}
+        <div class="urgent">
+          <strong>Urgency Level:</strong> ${urgency || 'Standard'}
+        </div>
+        <p>Please review and take appropriate action.</p>
+      </div>
+      <div class="footer">
+        <p>iBlood Blood Donation System</p>
+      </div>
+    </body>
+    </html>
+  `
+  
+  return sendEmail({ to, subject, html, text: subject })
+}
+
+/**
+ * Send donor registration confirmation email
+ */
+export async function sendDonorRegistrationEmail(options) {
+  const { to, donorName, driveName, appointmentDate } = options
+  
+  const subject = 'Registration Confirmed - Blood Donation Drive'
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #C23030 0%, #8B0000 100%); color: white; padding: 20px; text-align: center; border-radius: 10px; }
+        .content { padding: 20px; background: #f9f9f9; margin-top: 20px; border-radius: 10px; }
+        .button { display: inline-block; background: #C23030; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; margin: 15px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>✅ Registration Confirmed!</h1>
+      </div>
+      <div class="content">
+        <p>Dear ${donorName || 'Donor'},</p>
+        <p>Your registration for <strong>${driveName || 'Blood Donation Drive'}</strong> has been confirmed!</p>
+        ${appointmentDate ? `<p><strong>Date:</strong> ${new Date(appointmentDate).toLocaleDateString()}</p>` : ''}
+        <p>Thank you for being a hero and helping save lives!</p>
+        <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/donor/profile" class="button">View Your Profile</a>
+      </div>
+      <div class="footer">
+        <p>iBlood Blood Donation System</p>
+      </div>
+    </body>
+    </html>
+  `
+  
+  return sendEmail({ to, subject, html, text: subject })
+}
+
+/**
+ * Send error alert email to admins
+ */
+export async function sendErrorAlert(options) {
+  const { to, errorTitle, errorMessage, severity, timestamp } = options
+  
+  const subject = `🚨 Error Alert: ${errorTitle || 'System Error'}`
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); color: white; padding: 20px; text-align: center; border-radius: 10px; }
+        .content { padding: 20px; background: #fef2f2; margin-top: 20px; border-radius: 10px; border-left: 4px solid #dc2626; }
+        .severity { display: inline-block; padding: 4px 12px; border-radius: 4px; font-weight: bold; margin: 10px 0; }
+        .severity-high { background: #dc2626; color: white; }
+        .severity-medium { background: #f59e0b; color: white; }
+        .severity-low { background: #6b7280; color: white; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>🚨 System Error Alert</h1>
+      </div>
+      <div class="content">
+        <h2>${errorTitle || 'Unknown Error'}</h2>
+        <span class="severity severity-${severity || 'medium'}">${severity || 'Medium'} Severity</span>
+        <p><strong>Time:</strong> ${timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString()}</p>
+        <p><strong>Details:</strong></p>
+        <pre style="background: #fff; padding: 15px; border-radius: 5px; overflow-x: auto;">${errorMessage || 'No details available'}</pre>
+        <p>Please investigate and resolve this issue promptly.</p>
+      </div>
+      <div class="footer">
+        <p>iBlood Monitoring System</p>
+      </div>
+    </body>
+    </html>
+  `
+  
+  return sendEmail({ to, subject, html, text: subject })
+}
