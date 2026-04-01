@@ -1,6 +1,6 @@
 import { Geist, Geist_Mono } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
-import { AuthProvider } from '@/components/auth/auth-provider';
+import { ClientAuthProvider } from '@/components/auth/client-auth-provider';
 import './globals.css';
 
 const _geist = Geist({ subsets: ['latin'] });
@@ -34,10 +34,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className="font-sans antialiased">
-        <AuthProvider>
+        <ClientAuthProvider>
           {children}
           <Analytics />
-        </AuthProvider>
+        </ClientAuthProvider>
       </body>
     </html>
   );
