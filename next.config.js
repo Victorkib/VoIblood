@@ -2,9 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   pageExtensions: ['js', 'jsx', 'ts', 'tsx'],
-  experimental: {
-    turbopack: false,
-  },
+  turbopack: {},
 }
 
 export default nextConfig
