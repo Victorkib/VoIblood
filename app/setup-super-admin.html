@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Super Admin Setup - iBlood</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      color: #1a202c;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #718096;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .status-box {
+      background: #f7fafc;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 25px;
+    }
+
+    .status-box.success {
+      background: #f0fff4;
+      border-color: #48bb78;
+    }
+
+    .status-box.error {
+      background: #fff5f5;
+      border-color: #f56565;
+    }
+
+    .status-title {
+      font-weight: 600;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-title.success {
+      color: #276749;
+    }
+
+    .status-title.error {
+      color: #c53030;
+    }
+
+    .status-message {
+      color: #4a5568;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    button {
+      width: 100%;
+      padding: 15px 30px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 15px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: #edf2f7;
+      color: #2d3748;
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+
+    .info-list {
+      background: #ebf8ff;
+      border-left: 4px solid #4299e1;
+      padding: 15px 20px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+
+    .info-list h3 {
+      color: #2b6cb0;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .info-list ul {
+      list-style: none;
+      color: #2c5282;
+      font-size: 14px;
+    }
+
+    .info-list li {
+      padding: 5px 0;
+      padding-left: 20px;
+      position: relative;
+    }
+
+    .info-list li:before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: #48bb78;
+      font-weight: bold;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .user-info {
+      background: #faf5ff;
+      border: 1px solid #e9d8fd;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+
+    .user-info-label {
+      font-size: 12px;
+      color: #6b46c1;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    .user-info-value {
+      color: #44337a;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 Super Admin Setup</h1>
+    <p class="subtitle">Upgrade your account to super_admin instantly</p>
+
+    <!-- User Info Section -->
+    <div id="userInfo" class="user-info hidden">
+      <div class="user-info-label">Logged in as</div>
+      <div class="user-info-value" id="userEmail">Loading...</div>
+      <div class="user-info-label" style="margin-top: 10px;">Current Role</div>
+      <div class="user-info-value" id="userRole">Loading...</div>
+    </div>
+
+    <!-- Status Message -->
+    <div id="statusBox" class="status-box hidden">
+      <div class="status-title" id="statusTitle"></div>
+      <div class="status-message" id="statusMessage"></div>
+    </div>
+
+    <!-- Action Buttons -->
+    <button 
+      id="upgradeBtn" 
+      class="btn-primary" 
+      onclick="upgradeToSuperAdmin()"
+    >
+      Upgrade to Super Admin
+    </button>
+
+    <button 
+      id="refreshBtn" 
+      class="btn-secondary hidden" 
+      onclick="location.reload()"
+    >
+      Refresh Page
+    </button>
+
+    <!-- Instructions -->
+    <div class="info-list">
+      <h3>ℹ️ What this does:</h3>
+      <ul>
+        <li>Upgrades your role to super_admin</li>
+        <li>Creates platform administration organization</li>
+        <li>Gives you full system access</li>
+        <li>No password changes needed</li>
+      </ul>
+    </div>
+
+    <div class="info-list" style="background: #fff5f5; border-color: #fc8181;">
+      <h3 style="color: #c53030;">⚠️ Requirements:</h3>
+      <ul>
+        <li>Must be logged in as qinalexander56@gmail.com</li>
+        <li>Session must be valid (not expired)</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+
+    // Check authentication on load
+    async function checkAuth() {
+      try {
+        const response = await fetch('/api/auth/session');
+        const data = await response.json();
+        
+        if (data.user) {
+          currentUser = data.user;
+          document.getElementById('userEmail').textContent = currentUser.email;
+          document.getElementById('userRole').textContent = currentUser.role || 'pending';
+          document.getElementById('userInfo').classList.remove('hidden');
+
+          // Check if already super admin
+          if (currentUser.role === 'super_admin') {
+            showStatus('success', '✅ You are already a super_admin!', 'You have full system access. No action needed.');
+            document.getElementById('upgradeBtn').disabled = true;
+            document.getElementById('upgradeBtn').textContent = 'Already Super Admin';
+          } else if (currentUser.email !== 'qinalexander56@gmail.com') {
+            showStatus('error', '❌ Wrong Email', `You are logged in as ${currentUser.email}. Only qinalexander56@gmail.com can be upgraded to super_admin.`);
+            document.getElementById('upgradeBtn').disabled = true;
+            document.getElementById('upgradeBtn').textContent = 'Not Authorized';
+          }
+        } else {
+          showStatus('error', '❌ Not Logged In', 'Please login first, then come back to this page.');
+          document.getElementById('upgradeBtn').disabled = true;
+          document.getElementById('upgradeBtn').textContent = 'Login Required';
+          
+          // Add login button
+          const loginBtn = document.createElement('button');
+          loginBtn.className = 'btn-secondary';
+          loginBtn.textContent = 'Go to Login';
+          loginBtn.onclick = () => window.location.href = '/auth/login';
+          document.getElementById('upgradeBtn').after(loginBtn);
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        showStatus('error', '❌ Error checking authentication', error.message);
+      }
+    }
+
+    // Upgrade to super admin
+    async function upgradeToSuperAdmin() {
+      const btn = document.getElementById('upgradeBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span> Upgrading...';
+
+      try {
+        const response = await fetch('/api/setup/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          showStatus('success', '🎉 Success!', data.message);
+          
+          if (data.instructions) {
+            const instructionsHtml = data.instructions.map(inst => `<li>${inst}</li>`).join('');
+            document.getElementById('statusMessage').innerHTML += `<ul style="margin-top: 10px; padding-left: 20px;">${instructionsHtml}</ul>`;
+          }
+
+          btn.textContent = 'Upgrade Complete!';
+          document.getElementById('refreshBtn').classList.remove('hidden');
+
+          // Auto-refresh after 3 seconds
+          setTimeout(() => {
+            location.reload();
+          }, 3000);
+        } else {
+          showStatus('error', '❌ Upgrade Failed', data.error || 'Unknown error occurred');
+          btn.disabled = false;
+          btn.textContent = 'Try Again';
+        }
+      } catch (error) {
+        console.error('Upgrade error:', error);
+        showStatus('error', '❌ Error', error.message || 'Failed to upgrade');
+        btn.disabled = false;
+        btn.textContent = 'Try Again';
+      }
+    }
+
+    // Show status message
+    function showStatus(type, title, message) {
+      const statusBox = document.getElementById('statusBox');
+      const statusTitle = document.getElementById('statusTitle');
+      const statusMessage = document.getElementById('statusMessage');
+
+      statusBox.className = `status-box ${type}`;
+      statusTitle.className = `status-title ${type}`;
+      statusTitle.textContent = title;
+      statusMessage.textContent = message;
+      statusBox.classList.remove('hidden');
+    }
+
+    // Initialize
+    checkAuth();
+  </script>
+</body>
+</html>
