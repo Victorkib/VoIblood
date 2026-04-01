@@ -19,6 +19,8 @@ export function middleware(request) {
     '/auth/login',
     '/auth/signup',
     '/auth/callback',
+    '/auth/forgot-password',  // ← Forgot password page
+    '/auth/reset-password',   // ← Reset password page
     '/register',  // ← Volunteer registration (public, no login required)
     '/donor',  // ← Donor profile (public, no login required)
     '/api/auth',

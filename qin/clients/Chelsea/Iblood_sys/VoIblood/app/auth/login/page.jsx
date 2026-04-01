@@ -44,6 +44,11 @@ function LoginForm() {
       await login(email, password)
       router.push('/dashboard')
     } catch (err) {
+      // Handle email verification required
+      if (err?.requiresEmailVerification) {
+        router.push(`/auth/verify-email?email=${encodeURIComponent(err.email)}`)
+        return
+      }
       setError(err.message || 'Invalid email or password')
     } finally {
       setIsLoading(false)
@@ -118,9 +123,13 @@ function LoginForm() {
             <input type="checkbox" className="w-4 h-4 rounded border-border" />
             <span className="text-sm text-foreground/60">Remember me</span>
           </label>
-          <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
+          <button
+            type="button"
+            onClick={() => router.push('/auth/forgot-password')}
+            className="text-sm text-primary hover:underline"
+          >
             Forgot password?
-          </Link>
+          </button>
         </div>
 
         <Button

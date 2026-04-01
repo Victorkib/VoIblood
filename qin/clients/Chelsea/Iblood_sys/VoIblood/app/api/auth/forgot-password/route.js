@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
+import { checkAuthRateLimit } from '@/lib/auth-rate-limiter'
 
 export async function POST(request) {
   try {
@@ -14,6 +15,19 @@ export async function POST(request) {
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
+      )
+    }
+
+    // Check rate limit (3 requests per hour)
+    const rateLimit = checkAuthRateLimit(email, 3, 60 * 60000)
+    
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: `Too many requests. Please wait ${rateLimit.retryAfter} seconds before trying again.`,
+          retryAfter: rateLimit.retryAfter,
+        },
+        { status: 429 }
       )
     }
 
@@ -31,7 +45,7 @@ export async function POST(request) {
         { status: 200 }
       )
     }
-
+    
     // Always return success to prevent email enumeration attacks
     return NextResponse.json(
       { 

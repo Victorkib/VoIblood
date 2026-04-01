@@ -1,7 +1,7 @@
 export function AuthCard({ title, description, children, footerText, footerLink }) {
   return (
-    <div className="w-full max-w-sm">
-      <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
+    <div className="w-full max-w-md md:max-w-2xl lg:max-w-3xl xl:max-w-4xl">
+      <div className="rounded-lg border border-border bg-card p-6 sm:p-8 shadow-sm">
         {/* Header */}
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-foreground mb-2">{title}</h1>

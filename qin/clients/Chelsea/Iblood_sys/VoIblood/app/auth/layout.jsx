@@ -4,9 +4,9 @@ import Link from 'next/link'
 export default function AuthLayout({ children }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Header with Logo */}
-      <header className="border-b border-border px-4 py-4 sm:px-6">
-        <div className="mx-auto max-w-7xl flex items-center gap-2">
+      {/* Header with Logo - Full Width */}
+      <header className="border-b border-border px-4 py-4 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-7xl flex items-center gap-2">
           <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary">
             <Droplet className="w-6 h-6 text-primary-foreground" />
           </div>
@@ -16,9 +16,11 @@ export default function AuthLayout({ children }) {
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex flex-1 items-center justify-center px-4 py-12 sm:px-6">
-        {children}
+      {/* Main Content - Centered */}
+      <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+        <div className="w-full flex justify-center">
+          {children}
+        </div>
       </div>
     </div>
   )

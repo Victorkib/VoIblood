@@ -1,10 +1,11 @@
 /**
  * POST /api/auth/signup
  * Handle user registration with multi-tenant support
- * 
+ *
  * Signup flows:
  * 1. With invite token - Auto-assign to org with specified role
- * 2. Without invite - Create pending user, show org selection/browse option
+ * 2. Join existing org - Create pending request, org admin approval required
+ * 3. Create new org - Auto-create org, user becomes org_admin
  */
 
 import { NextResponse } from 'next/server'
@@ -12,6 +13,8 @@ import { createServerClient } from '@/lib/supabase'
 import { connectDB } from '@/lib/db'
 import User from '@/lib/models/User'
 import Invitation from '@/lib/models/Invitation'
+import Organization from '@/lib/models/Organization'
+import JoinRequest from '@/lib/models/JoinRequest'
 
 export async function POST(request) {
   try {
@@ -22,6 +25,10 @@ export async function POST(request) {
       inviteToken,
       bio,
       title,
+      orgSelection = 'create', // 'create' | 'join' | 'invite'
+      selectedOrg,
+      requestMessage,
+      requestedRole,
     } = await request.json()
 
     // Validation
@@ -82,15 +89,16 @@ export async function POST(request) {
     let accountStatus = 'pending_approval'
     let invitedBy = null
 
-    // Check if signing up with invitation token
+    // Handle different signup flows
     if (inviteToken) {
+      // Flow 1: Invitation token signup
       try {
         const invitation = await Invitation.findByToken(inviteToken)
-        
+
         // Validate invitation
         if (!invitation.isActive) {
           return NextResponse.json(
-            { 
+            {
               error: invitation.status === 'expired' ? 'Invitation has expired' :
                      invitation.status === 'accepted' ? 'Invitation already accepted' :
                      'Invitation is no longer valid',
@@ -127,6 +135,28 @@ export async function POST(request) {
           { status: 400 }
         )
       }
+    } else if (orgSelection === 'join' && selectedOrg) {
+      // Flow 2: Join existing organization (pending approval)
+      const org = await Organization.findById(selectedOrg)
+      if (!org || !org.isActive) {
+        return NextResponse.json(
+          { error: 'Organization not found or inactive' },
+          { status: 404 }
+        )
+      }
+
+      organizationId = org._id
+      organizationName = org.name
+      role = 'pending'
+      accountStatus = 'pending_approval'
+
+      // Create join request (will be created after user is created)
+      
+    } else if (orgSelection === 'create') {
+      // Flow 3: Create new organization
+      organizationName = `${fullName}'s Organization`
+      role = 'org_admin'
+      accountStatus = 'active'
     }
 
     // Create user in MongoDB
@@ -148,6 +178,31 @@ export async function POST(request) {
       })) || [],
     })
 
+    // If joining org, create join request
+    if (orgSelection === 'join' && selectedOrg) {
+      await JoinRequest.create({
+        userId: mongoUser._id,
+        organizationId: selectedOrg,
+        requestedRole: requestedRole || 'viewer',
+        message: requestMessage || '',
+        status: 'pending',
+      })
+    }
+
+    // If creating org, create the organization
+    if (orgSelection === 'create') {
+      const newOrg = await Organization.create({
+        name: organizationName,
+        createdBy: mongoUser._id,
+        isActive: true,
+      })
+      
+      // Update user with organization
+      mongoUser.organizationId = newOrg._id
+      mongoUser.organizationName = newOrg.name
+      await mongoUser.save()
+    }
+
     // If session exists (email confirmation not required), set cookie
     let response
     if (session) {
@@ -168,7 +223,8 @@ export async function POST(request) {
           expiresAt: session.expires_at,
         },
         requiresEmailConfirmation: false,
-        hasOrganization: !!organizationId,
+        hasOrganization: !!mongoUser.organizationId,
+        pendingApproval: mongoUser.accountStatus === 'pending_approval',
       })
 
       response.cookies.set({

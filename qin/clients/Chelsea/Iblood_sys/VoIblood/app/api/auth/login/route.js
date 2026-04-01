@@ -16,6 +16,7 @@ import { createServerClient } from '@/lib/supabase'
 import { connectDB } from '@/lib/db'
 import User from '@/lib/models/User'
 import { createSessionCookie } from '@/lib/session'
+import { checkAuthRateLimit } from '@/lib/auth-rate-limiter'
 
 export async function POST(request) {
   try {
@@ -25,6 +26,28 @@ export async function POST(request) {
       return NextResponse.json(
         { error: 'Email and password are required' },
         { status: 400 }
+      )
+    }
+
+    // Check rate limit (5 attempts per 10 minutes)
+    const rateLimit = checkAuthRateLimit(email, 5, 10 * 60000)
+    
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: `Too many failed attempts. Please try again in ${rateLimit.retryAfter} seconds.`,
+          code: 'rate_limited',
+          retryAfter: rateLimit.retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': '5',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': rateLimit.resetAt.toString(),
+            'Retry-After': rateLimit.retryAfter.toString(),
+          }
+        }
       )
     }
 
@@ -75,6 +98,25 @@ export async function POST(request) {
 
     // Update last login timestamp
     await mongoUser.updateLastLogin()
+
+    // Check if email is verified
+    if (!mongoUser.emailVerified && !supabaseUser.email_confirmed_at) {
+      return NextResponse.json(
+        {
+          error: 'Please verify your email address before signing in',
+          code: 'email_not_verified',
+          email: mongoUser.email,
+          requiresEmailVerification: true,
+        },
+        { status: 403 }
+      )
+    }
+
+    // Mark email as verified in MongoDB if Supabase confirms it
+    if (supabaseUser.email_confirmed_at && !mongoUser.emailVerified) {
+      mongoUser.emailVerified = true
+      await mongoUser.save()
+    }
 
     // Check if user is active
     if (!mongoUser.isActive) {

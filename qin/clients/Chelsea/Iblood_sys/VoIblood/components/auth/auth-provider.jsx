@@ -50,18 +50,32 @@ export function AuthProvider({ children }) {
     try {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (event, session) => {
-          console.log('[Auth] Auth state changed:', event)
+          console.log('[Auth] Auth state changed:', event, session ? 'with session' : 'no session')
 
           if (event === 'SIGNED_IN' && session) {
-            // Fetch user from API
+            // Fetch user from API immediately
             console.log('[Auth] Fetching user after SIGNED_IN')
-            const res = await fetch('/api/auth/session')
-            const data = await res.json()
-            console.log('[Auth] User after SIGNED_IN:', data.user)
-            setUser(data.user)
+            try {
+              const res = await fetch('/api/auth/session')
+              if (res.ok) {
+                const data = await res.json()
+                console.log('[Auth] User after SIGNED_IN:', data.user)
+                setUser(data.user)
+              }
+            } catch (err) {
+              console.error('[Auth] Failed to fetch user after sign in:', err)
+            }
           } else if (event === 'SIGNED_OUT') {
             console.log('[Auth] SIGNED_OUT')
             setUser(null)
+          } else if (event === 'INITIAL_SESSION') {
+            // Initial session loaded - fetch user
+            console.log('[Auth] Initial session loaded')
+            const res = await fetch('/api/auth/session')
+            if (res.ok) {
+              const data = await res.json()
+              setUser(data.user)
+            }
           }
         }
       )
@@ -87,6 +101,15 @@ export function AuthProvider({ children }) {
     console.log('[Auth] Login response:', res.status, data)
 
     if (!res.ok) {
+      // Handle email verification required
+      if (data.requiresEmailVerification) {
+        throw {
+          code: 'email_not_verified',
+          message: data.error,
+          email: data.email,
+          requiresEmailVerification: true,
+        }
+      }
       throw new Error(data.error || 'Login failed')
     }
 
@@ -100,10 +123,30 @@ export function AuthProvider({ children }) {
   }, [])
 
   const signup = useCallback(async (userData) => {
+    const {
+      email,
+      password,
+      fullName,
+      inviteToken,
+      orgSelection,
+      selectedOrg,
+      requestMessage,
+      requestedRole,
+    } = userData
+
     const res = await fetch('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(userData),
+      body: JSON.stringify({
+        email,
+        password,
+        fullName,
+        inviteToken,
+        orgSelection,
+        selectedOrg,
+        requestMessage,
+        requestedRole,
+      }),
     })
 
     const data = await res.json()
