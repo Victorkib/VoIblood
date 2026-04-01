@@ -62,7 +62,7 @@ export default function ExpiryPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {[1, 2].map((i) => (
-                <tr key={i} className="hover:bg-destructive/5 transition">
+                <tr key={`expired-${i}`} className="hover:bg-destructive/5 transition">
                   <td className="px-6 py-4 text-sm font-medium text-foreground">BLU-10000{i}</td>
                   <td className="px-6 py-4 text-sm">
                     <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -101,7 +101,7 @@ export default function ExpiryPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {[1, 2, 3].map((i) => (
-                <tr key={i} className="hover:bg-primary/5 transition">
+                <tr key={`expiring-${i}`} className="hover:bg-primary/5 transition">
                   <td className="px-6 py-4 text-sm font-medium text-foreground">BLU-2000{i}</td>
                   <td className="px-6 py-4 text-sm">
                     <span className="inline-flex items-center rounded-full bg-secondary/10 px-3 py-1 text-xs font-medium text-secondary">

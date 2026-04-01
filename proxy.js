@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 
 /**
- * Middleware for protecting routes
+ * Proxy for protecting routes
  * Runs on every request before it reaches the page
  * 
  * Note: We only validate the session cookie format and expiry.
  * Full user validation happens in the API routes.
  */
-export function middleware(request) {
+export function proxy(request) {
   const { pathname } = request.nextUrl
   
   // Get the auth session cookie
@@ -80,7 +80,7 @@ export function middleware(request) {
 }
 
 /**
- * Configure which routes the middleware should run on
+ * Configure which routes the proxy should run on
  */
 export const config = {
   matcher: [
@@ -94,3 +94,6 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
+
+// Ensure the proxy function is the default export as well
+export default proxy

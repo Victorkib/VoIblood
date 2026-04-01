@@ -30,7 +30,7 @@ export default function SettingsPage() {
           const Icon = tab.icon
           return (
             <button
-              key={tab.id}
+              key={`tab-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
                 activeTab === tab.id
@@ -98,13 +98,13 @@ export default function SettingsPage() {
           <h3 className="text-lg font-semibold text-foreground mb-6">Notification Preferences</h3>
           <div className="space-y-4">
             {[
-              { label: 'Expiry Alerts', description: 'Get notified when blood units are approaching expiration' },
-              { label: 'Request Status Updates', description: 'Receive updates on hospital blood requests' },
-              { label: 'Low Stock Alerts', description: 'Be notified when blood inventory reaches low levels' },
-              { label: 'System Maintenance', description: 'Important updates about system maintenance and upgrades' },
-              { label: 'Weekly Reports', description: 'Receive weekly summary reports of system activity' },
-            ].map((item, idx) => (
-              <div key={idx} className="flex items-start justify-between p-4 border border-border rounded-lg hover:bg-secondary/5 transition">
+              { id: 'expiry', label: 'Expiry Alerts', description: 'Get notified when blood units are approaching expiration' },
+              { id: 'requests', label: 'Request Status Updates', description: 'Receive updates on hospital blood requests' },
+              { id: 'lowstock', label: 'Low Stock Alerts', description: 'Be notified when blood inventory reaches low levels' },
+              { id: 'maintenance', label: 'System Maintenance', description: 'Important updates about system maintenance and upgrades' },
+              { id: 'reports', label: 'Weekly Reports', description: 'Receive weekly summary reports of system activity' },
+            ].map((item) => (
+              <div key={`notif-${item.id}`} className="flex items-start justify-between p-4 border border-border rounded-lg hover:bg-secondary/5 transition">
                 <div>
                   <p className="font-medium text-foreground">{item.label}</p>
                   <p className="text-sm text-foreground/60 mt-1">{item.description}</p>
@@ -129,11 +129,11 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-4">
               {[
-                { name: 'John Doe', email: 'john@hospital.com', role: 'Admin' },
-                { name: 'Jane Smith', email: 'jane@hospital.com', role: 'Staff' },
-                { name: 'Mike Johnson', email: 'mike@hospital.com', role: 'Staff' },
-              ].map((user, idx) => (
-                <div key={idx} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                { id: 'user1', name: 'John Doe', email: 'john@hospital.com', role: 'Admin' },
+                { id: 'user2', name: 'Jane Smith', email: 'jane@hospital.com', role: 'Staff' },
+                { id: 'user3', name: 'Mike Johnson', email: 'mike@hospital.com', role: 'Staff' },
+              ].map((user) => (
+                <div key={`team-${user.id}`} className="flex items-center justify-between p-4 border border-border rounded-lg">
                   <div>
                     <p className="font-medium text-foreground">{user.name}</p>
                     <p className="text-sm text-foreground/60">{user.email}</p>
@@ -168,10 +168,10 @@ export default function SettingsPage() {
               <p className="text-sm text-foreground/60 mb-4">Manage your active login sessions</p>
               <div className="space-y-3">
                 {[
-                  { device: 'Chrome on Windows', location: 'New York, USA', time: 'Active now' },
-                  { device: 'Safari on macOS', location: 'New York, USA', time: 'Last seen 2 hours ago' },
-                ].map((session, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-secondary/5 rounded-lg">
+                  { id: 'session1', device: 'Chrome on Windows', location: 'New York, USA', time: 'Active now' },
+                  { id: 'session2', device: 'Safari on macOS', location: 'New York, USA', time: 'Last seen 2 hours ago' },
+                ].map((session) => (
+                  <div key={`session-${session.id}`} className="flex items-center justify-between p-3 bg-secondary/5 rounded-lg">
                     <div>
                       <p className="text-sm font-medium text-foreground">{session.device}</p>
                       <p className="text-xs text-foreground/60">{session.location} • {session.time}</p>

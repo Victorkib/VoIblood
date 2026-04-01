@@ -21,12 +21,12 @@ export default function InventoryPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Units', value: '1,247', color: 'bg-secondary/10 text-secondary' },
-          { label: 'Available', value: '1,189', color: 'bg-accent/10 text-accent' },
-          { label: 'Reserved', value: '58', color: 'bg-primary/10 text-primary' },
-          { label: 'Low Stock', value: '5 Types', color: 'bg-destructive/10 text-destructive' },
-        ].map((stat, idx) => (
-          <Card key={idx} className="p-4">
+          { id: 'total', label: 'Total Units', value: '1,247', color: 'bg-secondary/10 text-secondary' },
+          { id: 'available', label: 'Available', value: '1,189', color: 'bg-accent/10 text-accent' },
+          { id: 'reserved', label: 'Reserved', value: '58', color: 'bg-primary/10 text-primary' },
+          { id: 'low', label: 'Low Stock', value: '5 Types', color: 'bg-destructive/10 text-destructive' },
+        ].map((stat) => (
+          <Card key={stat.id} className="p-4">
             <p className="text-sm text-foreground/60 mb-2">{stat.label}</p>
             <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
           </Card>
@@ -64,7 +64,7 @@ export default function InventoryPage() {
             <tbody className="divide-y divide-border">
               {/* Placeholder rows */}
               {[1, 2, 3, 4, 5].map((i) => (
-                <tr key={i} className="hover:bg-secondary/5 transition">
+                <tr key={`inventory-${i}`} className="hover:bg-secondary/5 transition">
                   <td className="px-6 py-4 text-sm font-medium text-foreground">BLU-{String(100000 + i).slice(0, 5)}</td>
                   <td className="px-6 py-4 text-sm">
                     <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">

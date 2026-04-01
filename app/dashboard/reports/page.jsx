@@ -15,37 +15,43 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {[
           {
+            id: 'inventory',
             title: 'Inventory Report',
             description: 'Blood stock levels and distribution by type',
             icon: '📦',
           },
           {
+            id: 'donor',
             title: 'Donor Analytics',
             description: 'Donor activity, eligibility, and trends',
             icon: '👥',
           },
           {
+            id: 'request',
             title: 'Request Summary',
             description: 'Hospital requests and fulfillment rates',
             icon: '🏥',
           },
           {
+            id: 'usage',
             title: 'Usage Trends',
             description: 'Monthly usage patterns and projections',
             icon: '📈',
           },
           {
+            id: 'expiry',
             title: 'Expiry Analysis',
             description: 'Wastage reduction and expiry patterns',
             icon: '⏰',
           },
           {
+            id: 'performance',
             title: 'Performance Metrics',
             description: 'System performance and KPIs',
             icon: '📊',
           },
-        ].map((report, idx) => (
-          <Card key={idx} className="p-6 hover:border-primary/30 hover:shadow-lg transition cursor-pointer">
+        ].map((report) => (
+          <Card key={report.id} className="p-6 hover:border-primary/30 hover:shadow-lg transition cursor-pointer">
             <div className="mb-4 text-3xl">{report.icon}</div>
             <h3 className="font-semibold text-foreground mb-2">{report.title}</h3>
             <p className="text-sm text-foreground/60 mb-4">{report.description}</p>
@@ -65,32 +71,37 @@ export default function ReportsPage() {
         <div className="divide-y divide-border">
           {[
             {
+              id: 'inventory-march',
               name: 'Monthly Inventory Report - March 2024',
               date: 'Mar 15, 2024',
               size: '2.4 MB',
             },
             {
+              id: 'donor-q1',
               name: 'Donor Activity Summary - Q1 2024',
               date: 'Mar 10, 2024',
               size: '1.8 MB',
             },
             {
+              id: 'request-feb',
               name: 'Hospital Request Analysis - February 2024',
               date: 'Mar 5, 2024',
               size: '1.2 MB',
             },
             {
+              id: 'performance-q4',
               name: 'Quarterly Performance Review',
               date: 'Feb 28, 2024',
               size: '3.1 MB',
             },
             {
+              id: 'wastage-jan',
               name: 'Wastage Reduction Report - January 2024',
               date: 'Feb 15, 2024',
               size: '0.9 MB',
             },
-          ].map((report, idx) => (
-            <div key={idx} className="flex items-center justify-between p-6 hover:bg-secondary/5 transition">
+          ].map((report) => (
+            <div key={report.id} className="flex items-center justify-between p-6 hover:bg-secondary/5 transition">
               <div>
                 <p className="font-medium text-foreground">{report.name}</p>
                 <p className="text-sm text-foreground/60 mt-1">{report.date} • {report.size}</p>

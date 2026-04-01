@@ -25,12 +25,12 @@ export default function RequestsPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: 'Pending', value: '8', color: 'bg-primary/10 text-primary' },
-          { label: 'Approved', value: '12', color: 'bg-secondary/10 text-secondary' },
-          { label: 'Fulfilled', value: '145', color: 'bg-accent/10 text-accent' },
-          { label: 'Rejected', value: '3', color: 'bg-destructive/10 text-destructive' },
-        ].map((stat, idx) => (
-          <Card key={idx} className="p-4">
+          { id: 'pending', label: 'Pending', value: '8', color: 'bg-primary/10 text-primary' },
+          { id: 'approved', label: 'Approved', value: '12', color: 'bg-secondary/10 text-secondary' },
+          { id: 'fulfilled', label: 'Fulfilled', value: '145', color: 'bg-accent/10 text-accent' },
+          { id: 'rejected', label: 'Rejected', value: '3', color: 'bg-destructive/10 text-destructive' },
+        ].map((stat) => (
+          <Card key={stat.id} className="p-4">
             <p className="text-sm text-foreground/60 mb-2">{stat.label}</p>
             <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
           </Card>

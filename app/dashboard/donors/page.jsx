@@ -49,7 +49,7 @@ export default function DonorsPage() {
             <tbody className="divide-y divide-border">
               {/* Placeholder rows */}
               {[1, 2, 3, 4, 5].map((i) => (
-                <tr key={i} className="hover:bg-secondary/5 transition">
+                <tr key={`donor-${i}`} className="hover:bg-secondary/5 transition">
                   <td className="px-6 py-4 text-sm text-foreground">John Donor {i}</td>
                   <td className="px-6 py-4 text-sm">
                     <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
