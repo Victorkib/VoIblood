@@ -1,19 +1,19 @@
 /**
  * Setup Default Super Admin API
- * 
+ *
  * TWO MODES OF OPERATION:
- * 
+ *
  * Mode 1: POST with authenticated user (PATCH MODE - RECOMMENDED)
- * - Login normally with qinalexander56@gmail.com
+ * - Login normally with DEFAULT_ADMIN_EMAIL
  * - Call this endpoint
  * - Your existing user gets upgraded to super_admin
  * - No manual Supabase steps needed!
- * 
+ *
  * Mode 2: POST without authentication (LEGACY MODE)
  * - Creates super admin from scratch
  * - Requires Supabase to be configured
  * - Use only if Mode 1 fails
- * 
+ *
  * AFTER RUNNING:
  * - You have super_admin access immediately
  * - Can create organizations and manage users
@@ -33,7 +33,7 @@ export async function POST(request) {
   try {
     await connectDB()
 
-    const adminEmail = 'qinalexander56@gmail.com'
+    const adminEmail = process.env.DEFAULT_ADMIN_EMAIL || 'qinalexander56@gmail.com'
 
     // MODE 1: Try to upgrade logged-in user (PATCH MODE)
     const currentUser = await getCurrentUser(request.cookies)

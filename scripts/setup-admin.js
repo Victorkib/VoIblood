@@ -1,6 +1,6 @@
 /**
  * Setup Default Admin User Script
- * Creates qinalexander56@gmail.com as default admin with organization
+ * Creates DEFAULT_ADMIN_EMAIL as default admin with organization
  */
 
 // Load environment variables from .env.local
@@ -69,7 +69,7 @@ async function setupAdmin() {
     const Organization = mongoose.models.Organization || mongoose.model('Organization', organizationSchema)
 
     // Check if admin user already exists
-    const adminEmail = 'qinalexander56@gmail.com'
+    const adminEmail = process.env.DEFAULT_ADMIN_EMAIL || 'qinalexander56@gmail.com'
     let adminUser = await User.findOne({ email: adminEmail })
 
     if (adminUser) {

@@ -47,7 +47,7 @@ export default function AdminSetupPage() {
             Admin Setup
           </h1>
           <p className="text-foreground/60">
-            Set up qinalexander56@gmail.com as the default admin user
+            Set up {process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'your-admin-email@example.com'} as the default admin user
           </p>
         </div>
 

@@ -1,11 +1,11 @@
 /**
  * iBlood Super Admin Setup Script
- * 
- * This script sets up qinalexander56@gmail.com as the platform super_admin
- * 
+ *
+ * This script sets up DEFAULT_ADMIN_EMAIL as the platform super_admin
+ *
  * Usage:
  *   node scripts/setup-super-admin.js
- * 
+ *
  * Requirements:
  *   - MongoDB connection string in .env.local or provided as argument
  *   - mongoose installed (npm install mongoose)
@@ -77,7 +77,7 @@ async function setupSuperAdmin() {
     const User = mongoose.model('User', userSchema);
     const Organization = mongoose.model('Organization', organizationSchema);
 
-    const adminEmail = 'qinalexander56@gmail.com';
+    const adminEmail = process.env.DEFAULT_ADMIN_EMAIL || 'qinalexander56@gmail.com';
 
     // Find or update super admin
     console.log('\n📧 Setting up super admin:', adminEmail);
