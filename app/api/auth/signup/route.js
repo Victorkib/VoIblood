@@ -5,7 +5,7 @@
  * Signup flows:
  * 1. With invite token - Auto-assign to org with specified role
  * 2. Join existing org - Create pending request, org admin approval required
- * 3. Create new org - Auto-create org, user becomes org_admin
+ * 3. Create new org - Store intent, user verifies email, then request is created in callback
  */
 
 import { NextResponse } from 'next/server'
@@ -15,6 +15,9 @@ import User from '@/lib/models/User'
 import Invitation from '@/lib/models/Invitation'
 import Organization from '@/lib/models/Organization'
 import JoinRequest from '@/lib/models/JoinRequest'
+import OrganizationRequest from '@/lib/models/OrganizationRequest'
+import PendingSignup from '@/lib/models/PendingSignup'
+import { sendRequestReceivedEmail } from '@/lib/org-request-emails'
 
 export async function POST(request) {
   try {
@@ -29,10 +32,28 @@ export async function POST(request) {
       selectedOrg,
       requestMessage,
       requestedRole,
+      // New fields for org creation requests
+      orgName,
+      orgType,
+      orgDescription,
+      orgMotivation,
     } = await request.json()
 
+    // Sanitize and validate inputs
+    const sanitizedEmail = email.trim().toLowerCase()
+    const sanitizedFullName = fullName.trim()
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(sanitizedEmail)) {
+      return NextResponse.json(
+        { error: 'Please enter a valid email address' },
+        { status: 400 }
+      )
+    }
+
     // Validation
-    if (!email || !password || !fullName) {
+    if (!sanitizedEmail || !password || !sanitizedFullName) {
       return NextResponse.json(
         { error: 'Email, password, and full name are required' },
         { status: 400 }
@@ -50,7 +71,7 @@ export async function POST(request) {
     await connectDB()
 
     // Check if user already exists in MongoDB
-    const existingUser = await User.findOne({ email: email.toLowerCase() })
+    const existingUser = await User.findOne({ email: sanitizedEmail })
     if (existingUser) {
       return NextResponse.json(
         { error: 'An account with this email already exists' },
@@ -58,203 +79,129 @@ export async function POST(request) {
       )
     }
 
+    // Save signup intent to MongoDB so callback can retrieve it reliably
+    // This works regardless of cookies or Supabase metadata behavior
+    await PendingSignup.findOneAndUpdate(
+      { email: sanitizedEmail },
+      {
+        supabaseId: '', // Will be updated after Supabase signup
+        orgSelection,
+        selectedOrg,
+        requestMessage,
+        requestedRole,
+        orgName: orgName || `${sanitizedFullName}'s Organization`,
+        orgType,
+        orgDescription,
+        orgMotivation,
+        bio,
+        title,
+        inviteToken,
+      },
+      { upsert: true, returnDocument: 'after' }
+    )
+    console.log('[Signup] Saved signup intent to PendingSignup for:', sanitizedEmail)
+
     // Create Supabase client
     const supabase = createServerClient()
 
-    // Sign up with Supabase
+    // Sign up with Supabase - USE SANITIZED VALUES
+    // This sends the confirmation email automatically
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: sanitizedEmail,
       password,
       options: {
         data: {
-          full_name: fullName,
+          full_name: sanitizedFullName,
+          // Store signup intent in Supabase user metadata for callback
+          signup_intent: {
+            orgSelection,
+            selectedOrg,
+            requestMessage,
+            requestedRole,
+            orgName: orgName || `${sanitizedFullName}'s Organization`,
+            orgType,
+            orgDescription,
+            orgMotivation,
+            bio,
+            title,
+          }
         },
         emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-      },
+      }
     })
 
     if (error) {
+      console.error('Supabase signup error:', error)
+      
+      // Provide user-friendly error messages
+      let errorMessage = 'Registration failed. Please try again.'
+      
+      if (error.message?.includes('email')) {
+        errorMessage = 'Please enter a valid email address'
+      } else if (error.message?.includes('password')) {
+        errorMessage = error.message
+      } else if (error.message?.includes('already registered')) {
+        errorMessage = 'An account with this email already exists'
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+      
       return NextResponse.json(
-        { error: error.message },
+        { error: errorMessage },
         { status: 400 }
       )
     }
 
     const { user: supabaseUser, session } = data
 
-    // Initialize user variables
-    let organizationId = null
-    let organizationName = null
-    let role = 'pending'
-    let accountStatus = 'pending_approval'
-    let invitedBy = null
+    // Update PendingSignup with the Supabase ID
+    await PendingSignup.findOneAndUpdate(
+      { email: sanitizedEmail },
+      { supabaseId: supabaseUser.id }
+    )
 
-    // Handle different signup flows
-    if (inviteToken) {
-      // Flow 1: Invitation token signup
-      try {
-        const invitation = await Invitation.findByToken(inviteToken)
-
-        // Validate invitation
-        if (!invitation.isActive) {
-          return NextResponse.json(
-            {
-              error: invitation.status === 'expired' ? 'Invitation has expired' :
-                     invitation.status === 'accepted' ? 'Invitation already accepted' :
-                     'Invitation is no longer valid',
-              status: invitation.status,
-            },
-            { status: 400 }
-          )
-        }
-
-        // Check if email matches
-        if (email.toLowerCase() !== invitation.email.toLowerCase()) {
-          return NextResponse.json(
-            { error: 'This invitation is not for your email address' },
-            { status: 403 }
-          )
-        }
-
-        // Accept invitation
-        await invitation.accept({
-          _id: null, // Will be set after user creation
-          assignToOrganization: async function(orgId, userRole) {
-            organizationId = orgId
-            organizationName = invitation.organizationId.name
-            role = userRole
-            accountStatus = 'active'
-            invitedBy = invitation.invitedBy
-          }
-        })
-
-      } catch (inviteError) {
-        console.error('Invitation processing error:', inviteError)
-        return NextResponse.json(
-          { error: 'Invalid or expired invitation token' },
-          { status: 400 }
-        )
+    // Store signup intent in a cookie so callback can read it
+    // This is more reliable than Supabase user_metadata for server-side callbacks
+    const response = NextResponse.json({
+      success: true,
+      message: 'Check your email to confirm your account',
+      requiresEmailConfirmation: true,
+      email: sanitizedEmail,
+      signupIntent: {
+        orgSelection,
+        selectedOrg,
+        requestMessage,
+        requestedRole,
+        orgName: orgName || `${sanitizedFullName}'s Organization`,
+        orgType,
+        orgDescription,
+        orgMotivation,
+        bio,
+        title,
       }
-    } else if (orgSelection === 'join' && selectedOrg) {
-      // Flow 2: Join existing organization (pending approval)
-      const org = await Organization.findById(selectedOrg)
-      if (!org || !org.isActive) {
-        return NextResponse.json(
-          { error: 'Organization not found or inactive' },
-          { status: 404 }
-        )
-      }
-
-      organizationId = org._id
-      organizationName = org.name
-      role = 'pending'
-      accountStatus = 'pending_approval'
-
-      // Create join request (will be created after user is created)
-      
-    } else if (orgSelection === 'create') {
-      // Flow 3: Create new organization
-      organizationName = `${fullName}'s Organization`
-      role = 'org_admin'
-      accountStatus = 'active'
-    }
-
-    // Create user in MongoDB
-    const mongoUser = await User.create({
-      supabaseId: supabaseUser.id,
-      email: user.email,
-      fullName: fullName,
-      role: role,
-      organizationId: organizationId,
-      organizationName: organizationName,
-      emailVerified: false,
-      accountStatus: accountStatus,
-      invitedBy: invitedBy,
-      bio: bio || '',
-      title: title || '',
-      providers: supabaseUser.app_metadata?.providers?.map(p => ({
-        provider: p,
-        providerId: supabaseUser.id,
-      })) || [],
     })
 
-    // If joining org, create join request
-    if (orgSelection === 'join' && selectedOrg) {
-      await JoinRequest.create({
-        userId: mongoUser._id,
-        organizationId: selectedOrg,
-        requestedRole: requestedRole || 'viewer',
-        message: requestMessage || '',
-        status: 'pending',
-      })
-    }
-
-    // If creating org, create the organization
-    if (orgSelection === 'create') {
-      const newOrg = await Organization.create({
-        name: organizationName,
-        createdBy: mongoUser._id,
-        isActive: true,
-      })
-      
-      // Update user with organization
-      mongoUser.organizationId = newOrg._id
-      mongoUser.organizationName = newOrg.name
-      await mongoUser.save()
-    }
-
-    // If session exists (email confirmation not required), set cookie
-    let response
-    if (session) {
-      response = NextResponse.json({
-        user: {
-          id: mongoUser._id.toString(),
-          supabaseId: mongoUser.supabaseId,
-          email: mongoUser.email,
-          fullName: mongoUser.fullName,
-          role: mongoUser.role,
-          organizationId: mongoUser.organizationId?.toString(),
-          organizationName: mongoUser.organizationName,
-          accountStatus: mongoUser.accountStatus,
-        },
-        session: {
-          accessToken: session.access_token,
-          refreshToken: session.refresh_token,
-          expiresAt: session.expires_at,
-        },
-        requiresEmailConfirmation: false,
-        hasOrganization: !!mongoUser.organizationId,
-        pendingApproval: mongoUser.accountStatus === 'pending_approval',
-      })
-
-      response.cookies.set({
-        name: 'auth-session',
-        value: JSON.stringify({
-          user: {
-            id: mongoUser._id.toString(),
-            supabaseId: mongoUser.supabaseId,
-            email: mongoUser.email,
-            fullName: mongoUser.fullName,
-            role: mongoUser.role,
-            organizationId: mongoUser.organizationId?.toString(),
-            organizationName: mongoUser.organizationName,
-            accountStatus: mongoUser.accountStatus,
-          },
-          token: session.access_token,
-          expiresAt: new Date(session.expires_at * 1000).toISOString(),
-        }),
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 7,
-        path: '/',
-      })
-    } else {
-      response = NextResponse.json({
-        message: 'Check your email to confirm your account',
-        requiresEmailConfirmation: true,
-      })
-    }
+    // Set signup intent cookie for callback to read
+    response.cookies.set({
+      name: 'signup-intent',
+      value: JSON.stringify({
+        orgSelection,
+        selectedOrg,
+        requestMessage,
+        requestedRole,
+        orgName: orgName || `${sanitizedFullName}'s Organization`,
+        orgType,
+        orgDescription,
+        orgMotivation,
+        bio,
+        title,
+      }),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/',
+    })
 
     return response
   } catch (error) {

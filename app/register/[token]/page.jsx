@@ -285,7 +285,7 @@ export default function RegisterPage() {
     // Check if OTP was verified
     if (!verified || !verificationToken) {
       setActionError('Please verify your phone/email with OTP first')
-      setRegistrationStep('otp')
+      setRegistrationStep('form') // OTP is embedded in the form step
       return
     }
 
@@ -345,7 +345,7 @@ export default function RegisterPage() {
         // If token expired, redirect to OTP verification
         if (data.tokenExpired || data.otpRequired) {
           setTimeout(() => {
-            setRegistrationStep('otp')
+            setRegistrationStep('form') // OTP is embedded in the form step
             setVerified(false)
             setOtpSent(false)
           }, 2000)

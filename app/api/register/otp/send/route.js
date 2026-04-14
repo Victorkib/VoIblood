@@ -11,7 +11,7 @@
 
 import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
-import { sendOTPViaSMS, isTwilioConfigured } from '@/lib/sms-service'
+import { sendOTPViaSMS } from '@/lib/sms-service'
 import { sendOTPViaEmail } from '@/lib/email-service'
 import OTPVerification from '@/lib/models/OTPVerification'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -106,20 +106,21 @@ export async function POST(request) {
 
     console.log('[OTP Send] OTP stored successfully')
 
-    // Try SMS first (primary)
-    if (normalizedPhone && isTwilioConfigured()) {
+    // Try SMS first (primary - Twilio → Africa's Talking fallback)
+    if (normalizedPhone) {
       try {
-        console.log('[OTP Send] Attempting Twilio SMS delivery...')
+        console.log('[OTP Send] Attempting SMS delivery (Twilio → Africa\'s Talking)...')
         const smsResult = await sendOTPViaSMS(normalizedPhone, otp)
 
         if (smsResult.success) {
           const duration = Date.now() - startTime
-          console.log('[OTP Send] SMS sent successfully in', duration, 'ms')
-          
+          console.log('[OTP Send] SMS sent successfully via', smsResult.provider, 'in', duration, 'ms')
+
           return NextResponse.json({
             success: true,
             message: 'OTP sent via SMS',
             method: 'sms',
+            provider: smsResult.provider, // 'twilio' or 'africastalking'
             expiresAt,
             remaining: rateLimit.remaining,
           }, {
@@ -135,8 +136,8 @@ export async function POST(request) {
       } catch (smsError) {
         console.log('[OTP Send] SMS error:', smsError.message)
       }
-    } else if (normalizedPhone) {
-      console.log('[OTP Send] Twilio not configured, skipping SMS')
+    } else {
+      console.log('[OTP Send] No phone number provided, skipping SMS')
     }
 
     // Fallback to email

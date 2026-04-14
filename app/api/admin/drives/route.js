@@ -75,6 +75,7 @@ export async function GET(request) {
       success: true,
       data: drives.map(drive => ({
         id: drive._id.toString(),
+        organizationId: drive.organizationId?._id || drive.organizationId,
         name: drive.name,
         description: drive.description,
         date: drive.date,

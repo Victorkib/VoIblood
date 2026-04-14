@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Plus, Search } from 'lucide-react'
@@ -9,6 +10,7 @@ import { useAuth } from '@/components/auth/auth-provider'
 import { RecordCollectionModal } from '@/components/modals/record-collection-modal'
 
 export default function InventoryPage() {
+  const router = useRouter()
   const [inventory, setInventory] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -288,7 +290,12 @@ export default function InventoryPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm">
-                          <button className="text-primary hover:underline">View</button>
+                          <button
+                            className="text-primary hover:underline cursor-pointer"
+                            onClick={() => router.push(`/dashboard/inventory/${unit.id || unit._id}`)}
+                          >
+                            View
+                          </button>
                         </td>
                       </tr>
                     )

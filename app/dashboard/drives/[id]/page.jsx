@@ -148,6 +148,16 @@ export default function DriveDetailsPage() {
   const [isEditingNotes, setIsEditingNotes] = useState(false)
   const [notesSaving, setNotesSaving] = useState(false)
 
+  // Record Donation Modal
+  const [isRecordDonationOpen, setIsRecordDonationOpen] = useState(false)
+  const [recordDonationForm, setRecordDonationForm] = useState({
+    volume: 450,
+    component: 'whole_blood',
+    technician: '',
+    notes: '',
+  })
+  const [recordDonationLoading, setRecordDonationLoading] = useState(false)
+
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/auth/login?redirect=/dashboard/drives/' + params.id)
@@ -184,14 +194,15 @@ export default function DriveDetailsPage() {
   const handleStatusChange = async (registrationId, newStatus) => {
     setActionLoading(true)
     try {
+      // Update the status (notifications sent automatically by backend)
       const res = await fetch(`/api/admin/drives/${params.id}/registrations/${registrationId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, sendNotification: true }),
       })
 
       if (res.ok) {
-        setActionSuccess(`Status updated to ${statusConfig[newStatus]?.label || newStatus}`)
+        setActionSuccess(`✅ Status updated to ${statusConfig[newStatus]?.label || newStatus}`)
         fetchDriveDetails()
         if (selectedDonor && selectedDonor.id === registrationId) {
           setSelectedDonor({ ...selectedDonor, status: newStatus })
@@ -228,6 +239,51 @@ export default function DriveDetailsPage() {
       setActionError('Failed to check in donors')
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  const handleOpenRecordDonation = (donor) => {
+    setSelectedDonor(donor)
+    setRecordDonationForm({
+      volume: 450,
+      component: 'whole_blood',
+      technician: '',
+      notes: '',
+    })
+    setIsRecordDonationOpen(true)
+  }
+
+  const handleRecordDonation = async () => {
+    if (!selectedDonor) return
+
+    setRecordDonationLoading(true)
+    try {
+      const res = await fetch(
+        `/api/admin/drives/${params.id}/registrations/${selectedDonor.id}/record-donation`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...recordDonationForm,
+            sendNotification: true,
+          }),
+        }
+      )
+
+      const data = await res.json()
+
+      if (res.ok) {
+        setActionSuccess(`✅ Donation recorded for ${selectedDonor.fullName}! Unit ID: ${data.data.unitId}`)
+        setIsRecordDonationOpen(false)
+        fetchDriveDetails()
+        setTimeout(() => setActionSuccess(null), 5000)
+      } else {
+        setActionError(data.error || 'Failed to record donation')
+      }
+    } catch (err) {
+      setActionError('Failed to record donation')
+    } finally {
+      setRecordDonationLoading(false)
     }
   }
 
@@ -831,6 +887,9 @@ export default function DriveDetailsPage() {
       {selectedDonor && (
         <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
           <SheetContent className="w-[500px] sm:w-[600px] p-0 overflow-hidden flex flex-col">
+            <SheetDescription className="sr-only">
+              Donor details for {selectedDonor.fullName}
+            </SheetDescription>
             {/* Hero Banner */}
             <div className="bg-gradient-to-br from-red-600 via-red-500 to-red-700 text-white p-6 relative overflow-hidden">
               <div className="absolute inset-0 opacity-10">
@@ -924,8 +983,9 @@ export default function DriveDetailsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'confirmed')}
-                    disabled={selectedDonor.status === 'confirmed'}
+                    disabled={selectedDonor.status !== 'registered'}
                     className="justify-start"
+                    title={selectedDonor.status === 'registered' ? 'Mark as confirmed' : `Already ${selectedDonor.status}`}
                   >
                     <UserCheck className="w-4 h-4 mr-2 text-green-600" />
                     Confirm
@@ -934,8 +994,9 @@ export default function DriveDetailsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'checked_in')}
-                    disabled={selectedDonor.status === 'checked_in'}
+                    disabled={!['registered', 'confirmed'].includes(selectedDonor.status)}
                     className="justify-start"
+                    title={selectedDonor.status !== 'checked_in' && selectedDonor.status !== 'completed' ? 'Mark as checked in' : `Already ${selectedDonor.status}`}
                   >
                     <Users className="w-4 h-4 mr-2 text-purple-600" />
                     Check In
@@ -944,8 +1005,9 @@ export default function DriveDetailsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'cancelled')}
-                    disabled={selectedDonor.status === 'cancelled'}
+                    disabled={['cancelled', 'completed'].includes(selectedDonor.status)}
                     className="justify-start"
+                    title={selectedDonor.status !== 'cancelled' && selectedDonor.status !== 'completed' ? 'Cancel registration' : `Already ${selectedDonor.status}`}
                   >
                     <XCircle className="w-4 h-4 mr-2 text-gray-600" />
                     Cancel
@@ -954,13 +1016,27 @@ export default function DriveDetailsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'no_show')}
-                    disabled={selectedDonor.status === 'no_show'}
+                    disabled={['no_show', 'completed'].includes(selectedDonor.status)}
                     className="justify-start"
+                    title={selectedDonor.status !== 'no_show' && selectedDonor.status !== 'completed' ? 'Mark as no show' : `Already ${selectedDonor.status}`}
                   >
                     <UserX className="w-4 h-4 mr-2 text-red-600" />
                     No Show
                   </Button>
                 </div>
+
+                {/* Record Donation - Only for checked_in donors */}
+                {selectedDonor.status === 'checked_in' && (
+                  <div className="mt-3 pt-3 border-t">
+                    <Button
+                      onClick={() => handleOpenRecordDonation(selectedDonor)}
+                      className="w-full bg-red-600 hover:bg-red-700"
+                    >
+                      <Droplet className="w-4 h-4 mr-2" />
+                      Record Blood Donation
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Communication */}
@@ -1136,6 +1212,125 @@ export default function DriveDetailsPage() {
                       Send SMS
                     </>
                   )}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Record Donation Modal */}
+      <Dialog open={isRecordDonationOpen} onOpenChange={setIsRecordDonationOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center">
+                <Droplet className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl">Record Blood Donation</h2>
+                <p className="text-sm text-gray-500 font-normal">
+                  {selectedDonor?.fullName} • {selectedDonor?.bloodType}
+                </p>
+              </div>
+            </DialogTitle>
+            <DialogDescription>
+              Complete the donation details below. This will create a blood inventory record and update the donor&apos;s history.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Blood Component */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Blood Component</label>
+              <select
+                value={recordDonationForm.component}
+                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, component: e.target.value })}
+                className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+              >
+                <option value="whole_blood">Whole Blood</option>
+                <option value="rbc">Red Blood Cells</option>
+                <option value="plasma">Plasma</option>
+                <option value="platelets">Platelets</option>
+                <option value="cryo">Cryoprecipitate</option>
+              </select>
+            </div>
+
+            {/* Volume */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Volume (ml)</label>
+              <Input
+                type="number"
+                value={recordDonationForm.volume}
+                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, volume: parseInt(e.target.value) || 450 })}
+                placeholder="450"
+                min={200}
+                max={500}
+              />
+              <p className="text-xs text-gray-500">Standard whole blood donation is 450ml</p>
+            </div>
+
+            {/* Technician */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Technician Name (Optional)</label>
+              <Input
+                value={recordDonationForm.technician}
+                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, technician: e.target.value })}
+                placeholder="Who collected this donation?"
+              />
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Notes (Optional)</label>
+              <Textarea
+                value={recordDonationForm.notes}
+                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, notes: e.target.value })}
+                placeholder="Any additional notes about this donation..."
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+
+            {/* Info Box */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div className="text-sm text-blue-900">
+                  <p className="font-semibold mb-1">What happens next:</p>
+                  <ul className="list-disc list-inside space-y-1 text-blue-800">
+                    <li>Donor status will change to &quot;completed&quot;</li>
+                    <li>Blood unit added to inventory</li>
+                    <li>Thank you SMS &amp; email sent to donor</li>
+                    <li>Next eligible date calculated (56 days)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsRecordDonationOpen(false)}
+              disabled={recordDonationLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRecordDonation}
+              disabled={recordDonationLoading}
+              className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600"
+            >
+              {recordDonationLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Recording...
+                </>
+              ) : (
+                <>
+                  <Droplet className="w-4 h-4 mr-2" />
+                  Record Donation
                 </>
               )}
             </Button>

@@ -8,18 +8,16 @@ import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import OrganizationRequest from '@/lib/models/OrganizationRequest'
 import User from '@/lib/models/User'
-import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
-import { logAuditEvent, AUDIT_ACTIONS, AUDIT_SEVERITY, getAuditContextFromRequest } from '@/lib/audit-logger'
+import Organization from '@/lib/models/Organization'
 import { hasAdminAccess } from '@/lib/rbac'
+import { sendRequestApprovedEmail, sendRequestRejectedEmail } from '@/lib/org-request-emails'
 
-export async function POST(request) {
-  const rateLimitInfo = getRateLimitInfo(request, 'create')
-  if (!rateLimitInfo.allowed) {
-    return NextResponse.json(createRateLimitError(rateLimitInfo), { status: 429 })
-  }
-
+export async function POST(request, { params }) {
   try {
     await connectDB()
+
+    const resolvedParams = await params
+    const { id: requestId } = resolvedParams
 
     // Get user from session
     const sessionCookie = request.cookies.get('auth-session')
@@ -49,11 +47,11 @@ export async function POST(request) {
     }
 
     const body = await request.json()
-    const { requestId, action, assignedRole, assignedDepartment, rejectionReason } = body
+    const { action, assignedRole, rejectionReason, adminNotes } = body
 
-    if (!requestId || !action) {
+    if (!action) {
       return NextResponse.json(
-        { error: 'Request ID and action are required' },
+        { error: 'Action is required' },
         { status: 400 }
       )
     }
@@ -86,7 +84,7 @@ export async function POST(request) {
     }
 
     // Check if admin belongs to the same organization
-    if (adminUser.organizationId.toString() !== orgRequest.organizationId._id.toString()) {
+    if (adminUser.organizationId?.toString() !== orgRequest.organizationId?._id.toString()) {
       return NextResponse.json(
         { error: 'You can only process requests for your organization' },
         { status: 403 }
@@ -105,36 +103,59 @@ export async function POST(request) {
       }
 
       // Approve request
-      await orgRequest.approve(adminUser, assignedRole, assignedDepartment)
+      await orgRequest.approve(adminUser, assignedRole)
+
+      // Update admin notes if provided
+      if (adminNotes) {
+        orgRequest.adminNotes = adminNotes
+        await orgRequest.save()
+      }
+
+      // Send approval email to user
+      try {
+        const org = await Organization.findById(orgRequest.organizationId)
+        await sendRequestApprovedEmail({
+          to: orgRequest.userId.email,
+          fullName: orgRequest.userId.fullName,
+          requestType: 'join',
+          orgName: org?.name || 'the organization',
+          assignedRole: orgRequest.assignedRole || assignedRole || orgRequest.requestedRole,
+        })
+      } catch (emailErr) {
+        console.warn('Failed to send approval email:', emailErr.message)
+      }
 
       result = {
         success: true,
-        message: 'Request approved successfully',
+        message: 'Request approved successfully. Approval email sent.',
         data: {
           status: 'approved',
           assignedRole: orgRequest.assignedRole,
-          assignedDepartment: orgRequest.assignedDepartment,
         },
       }
-
-      // Log audit event
-      await logAuditEvent({
-        action: 'users.create',
-        userId: adminUser._id.toString(),
-        organizationId: orgRequest.organizationId._id.toString(),
-        resourceType: 'organization_request',
-        resourceId: orgRequest._id.toString(),
-        severity: AUDIT_SEVERITY.HIGH,
-        description: `Admin ${adminUser.fullName} approved request for ${orgRequest.userId.fullName}`,
-        metadata: {
-          assignedRole: orgRequest.assignedRole,
-          assignedDepartment: orgRequest.assignedDepartment,
-        },
-        ...getAuditContextFromRequest(request),
-      })
     } else if (action === 'reject') {
       // Reject request
       await orgRequest.reject(adminUser, rejectionReason || 'Not a good fit at this time')
+
+      // Update admin notes if provided
+      if (adminNotes) {
+        orgRequest.adminNotes = adminNotes
+        await orgRequest.save()
+      }
+
+      // Send rejection email to user
+      try {
+        const org = await Organization.findById(orgRequest.organizationId)
+        await sendRequestRejectedEmail({
+          to: orgRequest.userId.email,
+          fullName: orgRequest.userId.fullName,
+          requestType: 'join',
+          orgName: org?.name || 'the organization',
+          rejectionReason: orgRequest.rejectionReason || rejectionReason,
+        })
+      } catch (emailErr) {
+        console.warn('Failed to send rejection email:', emailErr.message)
+      }
 
       result = {
         success: true,
@@ -144,25 +165,7 @@ export async function POST(request) {
           rejectionReason: orgRequest.rejectionReason,
         },
       }
-
-      // Log audit event
-      await logAuditEvent({
-        action: 'users.create',
-        userId: adminUser._id.toString(),
-        organizationId: orgRequest.organizationId._id.toString(),
-        resourceType: 'organization_request',
-        resourceId: orgRequest._id.toString(),
-        severity: AUDIT_SEVERITY.MEDIUM,
-        description: `Admin ${adminUser.fullName} rejected request for ${orgRequest.userId.fullName}`,
-        metadata: {
-          rejectionReason: orgRequest.rejectionReason,
-        },
-        ...getAuditContextFromRequest(request),
-      })
     }
-
-    // TODO: Send notification email to user
-    // await sendRequestDecisionEmail(orgRequest, action)
 
     return NextResponse.json(result)
   } catch (error) {

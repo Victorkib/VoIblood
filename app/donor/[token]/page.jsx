@@ -1,3 +1,11 @@
+/**
+ * Donor Profile Page - ISOLATED from main platform
+ * 
+ * This page is completely standalone and provides ZERO access to the main platform.
+ * Donors can only view their own profile information.
+ * No navigation to /dashboard or any other platform pages.
+ */
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -11,13 +19,13 @@ import {
   Calendar,
   Phone,
   Mail,
-  MapPin,
   Heart,
   CheckCircle,
   Loader2,
   Share2,
   Award,
   Clock,
+  AlertCircle,
 } from 'lucide-react'
 
 export default function DonorProfilePage() {
@@ -28,9 +36,17 @@ export default function DonorProfilePage() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    if (params.token) {
-      fetchDonorProfile(params.token)
-    }
+    // Unwrap params token (Next.js 15+ requirement)
+    const tokenPromise = params.token
+    Promise.resolve(tokenPromise).then(token => {
+      if (token) {
+        fetchDonorProfile(token)
+      }
+    }).catch(err => {
+      console.error('Error resolving params:', err)
+      setError('Invalid donor token')
+      setLoading(false)
+    })
   }, [params.token])
 
   const fetchDonorProfile = async (token) => {
@@ -74,6 +90,7 @@ export default function DonorProfilePage() {
     }
   }
 
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-white">
@@ -85,17 +102,18 @@ export default function DonorProfilePage() {
     )
   }
 
+  // Error state
   if (error || !donor) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-white">
         <Card className="max-w-md p-6">
           <div className="text-center">
-            <Heart className="w-12 h-12 text-red-600 mx-auto mb-4" />
+            <AlertCircle className="w-12 h-12 text-red-600 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-gray-900 mb-2">Profile Not Found</h2>
             <p className="text-gray-600 mb-4">{error || 'This donor profile could not be found'}</p>
-            <Button onClick={() => router.push('/')}>
-              Go to Homepage
-            </Button>
+            <p className="text-sm text-gray-500 mb-4">
+              Please check your donor ID or contact the donation drive organizer.
+            </p>
           </div>
         </Card>
       </div>
@@ -103,7 +121,7 @@ export default function DonorProfilePage() {
   }
 
   // Calculate age
-  const age = donor.dateOfBirth 
+  const age = donor.dateOfBirth
     ? new Date().getFullYear() - new Date(donor.dateOfBirth).getFullYear()
     : null
 
@@ -270,18 +288,21 @@ export default function DonorProfilePage() {
           </Card>
         )}
 
-        {/* Actions */}
+        {/* Actions - ISOLATED, no links to main platform */}
         <div className="grid md:grid-cols-2 gap-4">
           <Button onClick={handleShareProfile} className="bg-red-600 hover:bg-red-700">
             <Share2 className="w-4 h-4 mr-2" />
             Share Profile
           </Button>
-          <Button 
+          <Button
             variant="outline"
-            onClick={() => window.open('https://www.redcrossblood.org/donate-blood/blood-donation-centers.html', '_blank')}
+            onClick={() => {
+              // Only reload current page, no navigation
+              window.location.reload()
+            }}
           >
-            <MapPin className="w-4 h-4 mr-2" />
-            Find Donation Centers
+            <Clock className="w-4 h-4 mr-2" />
+            Refresh Profile
           </Button>
         </div>
 
@@ -312,6 +333,11 @@ export default function DonorProfilePage() {
             </ul>
           </div>
         </Card>
+
+        {/* Footer - No platform links */}
+        <div className="mt-8 text-center text-sm text-gray-500">
+          <p>This is your personal donor profile. Contact the donation drive organizer for any questions.</p>
+        </div>
       </div>
     </div>
   )

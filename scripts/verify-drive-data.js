@@ -8,7 +8,7 @@
 const mongoose = require('mongoose')
 
 // MongoDB connection
-const MONGODB_URI = process.env.DATABASE_URL || 'mongodb+srv://username:password@cluster.mongodb.net/iblood'
+const MONGODB_URI = process.env.DATABASE_URL || 'mongodb+srv://username:password@cluster.mongodb.net/iblood_dev'
 
 // Drive schema (simplified for script)
 const driveSchema = new mongoose.Schema({

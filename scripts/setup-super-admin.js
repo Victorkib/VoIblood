@@ -14,7 +14,7 @@
 const mongoose = require('mongoose');
 
 // Get MongoDB URI from environment or argument
-const MONGODB_URI = process.argv[2] || process.env.DATABASE_URL || 'mongodb+srv://<username>:<password>@cluster0.fr14aej.mongodb.net/iblood?retryWrites=true&w=majority&appName=Cluster0';
+const MONGODB_URI = process.argv[2] || process.env.DATABASE_URL || 'mongodb+srv://qinalexander56:Safaricom360@cluster0.fr14aej.mongodb.net/iblood_dev?retryWrites=true&w=majority&appName=Cluster0';
 
 if (!MONGODB_URI) {
   console.error('❌ Error: MongoDB URI required');

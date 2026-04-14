@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,14 +12,15 @@ import { AuthCard } from '@/components/auth/auth-card'
 import { FieldGroup, Field, FieldLabel, FieldDescription } from '@/components/ui/field'
 import { useAuth } from '@/components/auth/auth-provider'
 import { OrganizationSearch } from '@/components/auth/organization-search'
-import { 
-  Droplet, Loader2, Building, UserPlus, Key, 
+import {
+  Droplet, Loader2, Building, UserPlus, Key,
   User, Mail, Lock, CheckCircle, AlertCircle,
   ArrowRight, ArrowLeft, Eye, EyeOff
 } from 'lucide-react'
 
-export default function SignupPage() {
+function SignupPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { signup, loginWithOAuth, isAuthenticated } = useAuth()
 
   // Multi-step form state
@@ -34,12 +35,18 @@ export default function SignupPage() {
     confirmPassword: '',
     inviteToken: '',
   })
-  
+
   const [orgSelection, setOrgSelection] = useState('create')
   const [selectedOrg, setSelectedOrg] = useState(null)
   const [requestMessage, setRequestMessage] = useState('')
   const [requestedRole, setRequestedRole] = useState('viewer')
   
+  // Org creation fields
+  const [orgName, setOrgName] = useState('')
+  const [orgType, setOrgType] = useState('')
+  const [orgDescription, setOrgDescription] = useState('')
+  const [orgMotivation, setOrgMotivation] = useState('')
+
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [requiresConfirmation, setRequiresConfirmation] = useState(false)
@@ -49,6 +56,19 @@ export default function SignupPage() {
 
   // Password strength
   const [passwordStrength, setPasswordStrength] = useState(0)
+
+  // Check for invitation token in URL on mount
+  useEffect(() => {
+    const token = searchParams?.get('token')
+    if (token) {
+      // Auto-fill the invitation token
+      setFormData(prev => ({ ...prev, inviteToken: token }))
+      // Auto-select the invite option
+      setOrgSelection('invite')
+      // Show a success message
+      console.log('[Signup] Invitation token detected:', token.substring(0, 8) + '...')
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -87,6 +107,11 @@ export default function SignupPage() {
     }
     
     if (step === 3) {
+      if (orgSelection === 'create') {
+        if (!orgName.trim()) errors.push('Organization name is required')
+        if (!orgType) errors.push('Organization type is required')
+        if (!orgMotivation.trim()) errors.push('Please tell us why you want to create this organization')
+      }
       if (orgSelection === 'join' && !selectedOrg) {
         errors.push('Please select an organization to join')
       }
@@ -126,7 +151,23 @@ export default function SignupPage() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    
+
+    // Validate org creation fields if applicable
+    if (orgSelection === 'create') {
+      if (!orgName.trim()) {
+        setError('Organization name is required')
+        return
+      }
+      if (!orgType) {
+        setError('Organization type is required')
+        return
+      }
+      if (!orgMotivation.trim()) {
+        setError('Please tell us why you want to create this organization')
+        return
+      }
+    }
+
     // Validate final step
     const errors = validateStep(3)
     if (errors.length > 0) {
@@ -139,23 +180,33 @@ export default function SignupPage() {
 
     try {
       const result = await signup({
-        email: formData.email,
+        email: formData.email.trim(),
         password: formData.password,
-        fullName: formData.fullName,
+        fullName: formData.fullName.trim(),
         inviteToken: formData.inviteToken || undefined,
         orgSelection,
         selectedOrg: selectedOrg ? selectedOrg.id : null,
         requestMessage,
         requestedRole,
+        // Org creation fields
+        orgName: orgName.trim(),
+        orgType,
+        orgDescription: orgDescription.trim(),
+        orgMotivation: orgMotivation.trim(),
       })
 
       if (result.requiresEmailConfirmation) {
         setRequiresConfirmation(true)
+        
+        // Store signup intent in localStorage for fallback (callback already has it in metadata)
+        if (result.signupIntent) {
+          localStorage.setItem('signup_intent', JSON.stringify(result.signupIntent))
+        }
       } else {
-        if (orgSelection === 'create') {
-          router.push('/dashboard/setup')
+        if (orgSelection === 'create' || orgSelection === 'join') {
+          router.push('/pending-approval')
         } else {
-          router.push('/dashboard?pending-approval=true')
+          router.push('/dashboard')
         }
       }
     } catch (err) {
@@ -179,7 +230,9 @@ export default function SignupPage() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
+    // Trim email and fullName automatically
+    const processedValue = (name === 'email' || name === 'fullName') ? value.trim() : value
+    setFormData(prev => ({ ...prev, [name]: processedValue }))
     if (touched[name]) {
       validateStep(currentStep)
     }
@@ -221,8 +274,17 @@ export default function SignupPage() {
             </svg>
           </div>
           <p className="text-foreground">
-            Please check your email at <strong className="text-foreground">{formData.email}</strong> to confirm your account.
+            Please check your email at <strong className="text-foreground">{formData.email}</strong> and click the confirmation link.
           </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+            <p className="text-sm text-blue-900 font-medium mb-2">What happens next?</p>
+            <ol className="text-xs text-blue-800 space-y-1 list-decimal list-inside">
+              <li>Click the confirmation link in your email</li>
+              <li>Your account will be created automatically</li>
+              <li>Your organization creation request will be sent to our admins for review</li>
+              <li>You'll receive an email with the decision (usually within 24-48 hours)</li>
+            </ol>
+          </div>
           <Button variant="outline" onClick={() => router.push('/auth/login')} className="w-full">
             Back to Sign In
           </Button>
@@ -297,9 +359,26 @@ export default function SignupPage() {
           {/* Step 1: Personal Information */}
           {currentStep === 1 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+              {/* Invitation banner */}
+              {formData.inviteToken && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-blue-800">Accepting Invitation</p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Complete this form to accept your organization invitation. Your role and organization will be automatically assigned.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold">Let's get started</h3>
-                <p className="text-sm text-muted-foreground">Enter your personal information</p>
+                <h3 className="text-lg font-semibold">{formData.inviteToken ? 'Almost There!' : 'Let\'s get started'}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {formData.inviteToken 
+                    ? 'Enter your details to accept the invitation' 
+                    : 'Enter your personal information'}
+                </p>
               </div>
 
               <FieldGroup>
@@ -551,6 +630,77 @@ export default function SignupPage() {
                   </div>
                 </RadioGroup>
 
+                {orgSelection === 'create' && (
+                  <div className="mt-4 space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="font-semibold text-sm text-blue-900 flex items-center gap-2">
+                      <Building className="w-4 h-4" />
+                      Organization Details
+                    </h4>
+                    <p className="text-xs text-blue-700">
+                      Your request will be reviewed by our platform administrators. Please provide details about the organization you'd like to create.
+                    </p>
+
+                    <div>
+                      <Label htmlFor="orgName">Organization Name *</Label>
+                      <Input
+                        id="orgName"
+                        value={orgName}
+                        onChange={(e) => setOrgName(e.target.value)}
+                        placeholder="e.g., Red Cross Kenya, City Blood Bank"
+                        disabled={isLoading}
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="orgType">Organization Type *</Label>
+                      <select
+                        id="orgType"
+                        value={orgType}
+                        onChange={(e) => setOrgType(e.target.value)}
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground mt-1"
+                        disabled={isLoading}
+                      >
+                        <option value="">Select type...</option>
+                        <option value="blood_bank">Blood Bank</option>
+                        <option value="hospital">Hospital</option>
+                        <option value="transfusion_center">Transfusion Center</option>
+                        <option value="ngo">NGO / Non-Profit</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="orgDescription">Organization Description (Optional)</Label>
+                      <textarea
+                        id="orgDescription"
+                        value={orgDescription}
+                        onChange={(e) => setOrgDescription(e.target.value)}
+                        placeholder="Brief description of your organization's mission and goals..."
+                        rows={3}
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground resize-none mt-1"
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="orgMotivation">Why do you want to create this organization? *</Label>
+                      <textarea
+                        id="orgMotivation"
+                        value={orgMotivation}
+                        onChange={(e) => setOrgMotivation(e.target.value)}
+                        placeholder="Tell us about your goals and why this organization is needed..."
+                        rows={3}
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground resize-none mt-1"
+                        disabled={isLoading}
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        This helps our admin team review and approve your request faster.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {orgSelection === 'join' && (
                   <div className="mt-4 space-y-3">
                     <Label>Search Organization</Label>
@@ -595,6 +745,19 @@ export default function SignupPage() {
 
                 {orgSelection === 'invite' && (
                   <FieldGroup className="mt-4">
+                    {/* Invitation detected banner */}
+                    {formData.inviteToken && (
+                      <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
+                        <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-green-800">Invitation detected!</p>
+                          <p className="text-xs text-green-600 mt-1">
+                            Your invitation token has been automatically loaded. Complete the form below to accept.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     <Field>
                       <FieldLabel>Invitation Token *</FieldLabel>
                       <div className="relative">
@@ -605,12 +768,14 @@ export default function SignupPage() {
                           name="inviteToken"
                           value={formData.inviteToken}
                           onChange={handleChange}
-                          disabled={isLoading}
+                          disabled={isLoading || !!searchParams?.get('token')}
                           className="pl-10"
                         />
                       </div>
                       <FieldDescription>
-                        Contact your organization admin to get your invitation token
+                        {searchParams?.get('token') 
+                          ? 'Token loaded from invitation link' 
+                          : 'Contact your organization admin to get your invitation token'}
                       </FieldDescription>
                     </Field>
                   </FieldGroup>
@@ -694,7 +859,7 @@ export default function SignupPage() {
                   <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                     <Building className="w-4 h-4 text-primary" />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className="text-xs text-gray-500">Organization</p>
                     <p className="font-medium">
                       {orgSelection === 'create' && 'Create new organization'}
@@ -702,6 +867,16 @@ export default function SignupPage() {
                       {orgSelection === 'join' && !selectedOrg && 'Not selected'}
                       {orgSelection === 'invite' && 'Join with invitation token'}
                     </p>
+                    {orgSelection === 'create' && orgName && (
+                      <>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Name: {orgName} • Type: {orgType.replace('_', ' ')}
+                        </p>
+                        {orgDescription && (
+                          <p className="text-xs text-gray-500 mt-1">{orgDescription.substring(0, 100)}...</p>
+                        )}
+                      </>
+                    )}
                     {orgSelection === 'join' && requestedRole && (
                       <p className="text-sm text-gray-600">Requested role: {requestedRole}</p>
                     )}
@@ -811,5 +986,17 @@ export default function SignupPage() {
         </form>
       </AuthCard>
     </div>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    }>
+      <SignupPageContent />
+    </Suspense>
   )
 }

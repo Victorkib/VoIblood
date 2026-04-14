@@ -132,6 +132,11 @@ export function AuthProvider({ children }) {
       selectedOrg,
       requestMessage,
       requestedRole,
+      // Org creation fields
+      orgName,
+      orgType,
+      orgDescription,
+      orgMotivation,
     } = userData
 
     const res = await fetch('/api/auth/signup', {
@@ -146,6 +151,11 @@ export function AuthProvider({ children }) {
         selectedOrg,
         requestMessage,
         requestedRole,
+        // Org creation fields
+        orgName,
+        orgType,
+        orgDescription,
+        orgMotivation,
       }),
     })
 

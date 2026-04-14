@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Plus, Search } from 'lucide-react'
@@ -9,10 +10,13 @@ import { useAuth } from '@/components/auth/auth-provider'
 import { AddDonorModal } from '@/components/modals/add-donor-modal'
 
 export default function DonorsPage() {
+  const router = useRouter()
   const [donors, setDonors] = useState([])
+  const [drives, setDrives] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
+  const [selectedDrive, setSelectedDrive] = useState('')
   const [page, setPage] = useState(1)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const { user, isLoading: authLoading } = useAuth()
@@ -22,6 +26,20 @@ export default function DonorsPage() {
     if (authLoading) {
       return
     }
+
+    // Fetch drives for filtering
+    const fetchDrives = async () => {
+      try {
+        const res = await fetch('/api/admin/drives?status=&search=')
+        if (res.ok) {
+          const data = await res.json()
+          setDrives(data.data || [])
+        }
+      } catch (err) {
+        console.error('Failed to fetch drives:', err)
+      }
+    }
+    fetchDrives()
 
     const fetchDonors = async () => {
       try {
@@ -79,6 +97,7 @@ export default function DonorsPage() {
           search: search || '',
           page: page.toString(),
           limit: '10',
+          ...(selectedDrive ? { driveId: selectedDrive } : {}),
         })
 
         const response = await fetch(`/api/donors?${params}`)
@@ -104,7 +123,7 @@ export default function DonorsPage() {
     }, 300)
 
     return () => clearTimeout(debounceTimer)
-  }, [user, authLoading, search, page])
+  }, [user, authLoading, search, page, selectedDrive])
 
   const formatLastDonation = (date) => {
     if (!date) return 'Never'
@@ -181,8 +200,8 @@ export default function DonorsPage() {
 
       {/* Search and Filter */}
       <Card className="p-4">
-        <div className="flex gap-4">
-          <div className="flex-1 relative">
+        <div className="flex gap-4 flex-wrap">
+          <div className="flex-1 relative min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
             <Input
               type="search"
@@ -195,6 +214,23 @@ export default function DonorsPage() {
               }}
             />
           </div>
+
+          {/* Drive Filter */}
+          <select
+            value={selectedDrive}
+            onChange={(e) => {
+              setSelectedDrive(e.target.value)
+              setPage(1)
+            }}
+            className="px-4 py-2 border border-border rounded-lg bg-background text-foreground text-sm min-w-[200px]"
+          >
+            <option value="">All Drives</option>
+            {drives.map((drive) => (
+              <option key={drive.id || drive._id} value={drive.id || drive._id}>
+                {drive.name} • {new Date(drive.date).toLocaleDateString()}
+              </option>
+            ))}
+          </select>
         </div>
       </Card>
 
@@ -239,17 +275,26 @@ export default function DonorsPage() {
                       <td className="px-6 py-4 text-sm text-foreground/60">{formatLastDonation(donor.lastDonationDate)}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
-                          donor.donationStatus === 'available'
+                          donor.status === 'completed'
                             ? 'bg-green-500/10 text-green-700'
-                            : donor.donationStatus === 'deferred'
-                              ? 'bg-yellow-500/10 text-yellow-700'
-                              : 'bg-red-500/10 text-red-700'
+                            : donor.status === 'cancelled' || donor.status === 'no_show'
+                              ? 'bg-red-500/10 text-red-700'
+                              : donor.status === 'checked_in'
+                                ? 'bg-purple-500/10 text-purple-700'
+                                : donor.status === 'confirmed'
+                                  ? 'bg-blue-500/10 text-blue-700'
+                                  : 'bg-gray-500/10 text-gray-700'
                         }`}>
-                          {donor.donationStatus.charAt(0).toUpperCase() + donor.donationStatus.slice(1)}
+                          {donor.status ? donor.status.charAt(0).toUpperCase() + donor.status.slice(1) : 'Unknown'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        <button className="text-primary hover:underline">View</button>
+                        <button
+                          className="text-primary hover:underline cursor-pointer"
+                          onClick={() => router.push(`/dashboard/donors/${donor.id || donor._id}`)}
+                        >
+                          View
+                        </button>
                       </td>
                     </tr>
                   ))

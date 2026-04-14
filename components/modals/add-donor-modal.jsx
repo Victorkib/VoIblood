@@ -18,6 +18,8 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
     age: '',
     gender: 'male',
     dateOfBirth: '',
+    weight: '',
+    hasDonatedBefore: false,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -37,7 +39,7 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
     // Validate form data
     const validation = validate(formData)
     if (!validation.isValid) {
@@ -49,12 +51,25 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
     setLoading(true)
     setError(null)
 
+    // Calculate age from date of birth
+    const dob = new Date(formData.dateOfBirth)
+    const ageDiff = Date.now() - dob.getTime()
+    const age = Math.floor(ageDiff / (1000 * 60 * 60 * 24 * 365.25))
+
     try {
       const response = await fetch('/api/donors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...formData,
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email.toLowerCase(),
+          phone: formData.phone,
+          bloodType: formData.bloodType,
+          dateOfBirth: formData.dateOfBirth,
+          gender: formData.gender,
+          weight: formData.weight || undefined,
+          hasDonatedBefore: formData.hasDonatedBefore || false,
           organizationId,
         }),
       })
@@ -75,6 +90,8 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
         age: '',
         gender: 'male',
         dateOfBirth: '',
+        weight: '',
+        hasDonatedBefore: false,
       })
       onClose()
     } catch (err) {
@@ -186,6 +203,32 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
               <option value="other">Other</option>
             </select>
           </FormField>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField label="Weight (kg)" error={fieldErrors.weight} hint="Optional - helps determine eligibility">
+              <Input
+                type="number"
+                name="weight"
+                value={formData.weight}
+                onChange={handleInputChange}
+                placeholder="70"
+                min="30"
+                max="200"
+                className={fieldErrors.weight ? 'border-red-600' : ''}
+              />
+            </FormField>
+            <FormField label="Has Donated Before?" error={fieldErrors.hasDonatedBefore} hint="Previous donation history">
+              <select
+                name="hasDonatedBefore"
+                value={formData.hasDonatedBefore}
+                onChange={handleInputChange}
+                className={`w-full px-3 py-2 rounded-md border bg-background text-foreground ${fieldErrors.hasDonatedBefore ? 'border-red-600' : 'border-border'}`}
+              >
+                <option value={false}>No - First Time</option>
+                <option value={true}>Yes - Previous Donor</option>
+              </select>
+            </FormField>
+          </div>
 
           <div className="flex gap-3 pt-6">
             <Button type="submit" disabled={loading} className="flex-1">

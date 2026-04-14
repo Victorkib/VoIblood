@@ -9,7 +9,7 @@ import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
 import DonationDrive from '@/lib/models/DonationDrive'
 import Donor from '@/lib/models/Donor'
-import { sendOTPViaSMS, isTwilioConfigured } from '@/lib/sms-service'
+import { sendOTPViaSMS, isTwilioConfigured, isAfricasTalkingConfigured } from '@/lib/sms-service'
 
 export async function POST(request, { params }) {
   try {
@@ -60,7 +60,9 @@ export async function POST(request, { params }) {
       )
     }
 
-    if (!isTwilioConfigured()) {
+    const smsConfigured = isTwilioConfigured() || isAfricasTalkingConfigured()
+
+    if (!smsConfigured) {
       // Log SMS for demo/testing
       console.log('\n[SMS FALLBACK] ========================================')
       console.log(`[SMS] To: ${donor.phone}`)
@@ -69,7 +71,7 @@ export async function POST(request, { params }) {
 
       return NextResponse.json({
         success: true,
-        message: 'SMS logged (Twilio not configured)',
+        message: 'SMS logged (No SMS providers configured)',
         data: {
           donorId: donor._id.toString(),
           phone: donor.phone,
@@ -89,11 +91,11 @@ export async function POST(request, { params }) {
       smsBody = `Hi ${donor.firstName}! Reminder: Blood donation tomorrow at ${drive.location} (${drive.startTime}). Sleep well, eat breakfast, drink water. See you there!`
     }
 
-    // Send SMS
+    // Send SMS (will try Twilio → Africa's Talking automatically)
     const smsResult = await sendOTPViaSMS(donor.phone, smsBody)
 
     if (smsResult.success) {
-      console.log('[SMS API] SMS sent to:', donor.phone, 'for drive:', drive.name)
+      console.log('[SMS API] SMS sent via', smsResult.provider || 'SMS', 'to:', donor.phone, 'for drive:', drive.name)
 
       return NextResponse.json({
         success: true,
@@ -101,6 +103,7 @@ export async function POST(request, { params }) {
         data: {
           donorId: donor._id.toString(),
           phone: donor.phone,
+          provider: smsResult.provider || 'unknown',
           sentAt: new Date().toISOString(),
         },
       })

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Mail, CheckCircle, XCircle, Users } from 'lucide-react'
+import { Mail, CheckCircle, XCircle, Users, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/components/auth/auth-provider'
 
 function InvitePageComponent() {
@@ -25,20 +25,54 @@ function InvitePageComponent() {
       return
     }
 
-    // In real implementation, fetch invitation details
-    // For now, simulate invitation validation
-    if (token.startsWith('demo-')) {
-      setInvitation({
-        id: 'demo-invitation',
-        organizationName: 'Demo Blood Bank',
-        organizationType: 'blood_bank',
-        role: 'staff',
-        invitedBy: 'Admin User',
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-      })
-    } else {
-      setError('Invalid invitation token')
+    // Fetch invitation details from API
+    const fetchInvitation = async () => {
+      try {
+        // For demo purposes, still allow demo tokens
+        if (token.startsWith('demo-')) {
+          setInvitation({
+            id: 'demo-invitation',
+            organizationName: 'Demo Blood Bank',
+            organizationType: 'blood_bank',
+            role: 'staff',
+            invitedBy: 'Admin User',
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            email: 'demo@example.com'
+          })
+          return
+        }
+
+        // Fetch real invitation from API
+        const response = await fetch(`/api/invitations/validate?token=${token}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || 'Invalid invitation')
+        }
+
+        const data = await response.json()
+        setInvitation({
+          id: data.data._id,
+          organizationName: data.data.organizationId?.name || 'Unknown Organization',
+          organizationType: data.data.organizationId?.type || 'organization',
+          role: data.data.role,
+          invitedBy: data.data.invitedBy?.fullName || 'Unknown',
+          expiresAt: new Date(data.data.expiresAt),
+          email: data.data.email,
+          message: data.data.message,
+          department: data.data.department,
+          title: data.data.title,
+        })
+      } catch (err) {
+        console.error('[Invite Page] Error fetching invitation:', err)
+        setError(err.message || 'This invitation is invalid or has expired')
+      }
     }
+
+    fetchInvitation()
   }, [token])
 
   const handleAcceptInvite = async () => {
@@ -120,18 +154,52 @@ function InvitePageComponent() {
         {/* Invitation Details */}
         {invitation && (
           <div className="bg-secondary/20 rounded-lg p-6 mb-6">
-            <div className="text-center">
+            <div className="text-center mb-4">
               <h3 className="text-lg font-semibold text-foreground mb-2">
                 {invitation.organizationName}
               </h3>
               <div className="flex items-center justify-center gap-2 text-sm text-foreground/60">
                 <Users className="w-4 h-4" />
-                <span>Invitation to join as {invitation.role}</span>
+                <span>Invitation to join as <strong className="text-foreground">{invitation.role.replace('_', ' ')}</strong></span>
               </div>
               <div className="text-xs text-foreground/40 mt-2">
                 Invited by {invitation.invitedBy} • Expires {new Date(invitation.expiresAt).toLocaleDateString()}
               </div>
             </div>
+            
+            {/* Additional Details */}
+            {(invitation.message || invitation.department || invitation.title) && (
+              <div className="border-t border-secondary pt-4 mt-4">
+                {invitation.message && (
+                  <div className="mb-3">
+                    <p className="text-xs text-foreground/60 mb-1">Message:</p>
+                    <p className="text-sm text-foreground italic">&quot;{invitation.message}&quot;</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {invitation.department && (
+                    <div>
+                      <p className="text-xs text-foreground/60">Department</p>
+                      <p className="text-foreground font-medium">{invitation.department}</p>
+                    </div>
+                  )}
+                  {invitation.title && (
+                    <div>
+                      <p className="text-xs text-foreground/60">Title</p>
+                      <p className="text-foreground font-medium">{invitation.title}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Expiry Warning */}
+            {invitation.expiresAt && (
+              <div className="mt-4 flex items-center gap-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                <AlertCircle className="w-4 h-4" />
+                <span>This invitation expires in {Math.ceil((new Date(invitation.expiresAt) - new Date()) / (1000 * 60 * 60 * 24))} days</span>
+              </div>
+            )}
           </div>
         )}
 

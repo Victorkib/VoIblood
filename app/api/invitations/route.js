@@ -12,6 +12,7 @@ import Organization from '@/lib/models/Organization'
 import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
 import { logAuditEvent, AUDIT_ACTIONS, AUDIT_SEVERITY, getAuditContextFromRequest } from '@/lib/audit-logger'
 import { hasAdminAccess, isSuperAdmin } from '@/lib/rbac'
+import { sendInvitationEmail } from '@/lib/email-service'
 
 /**
  * POST /api/invitations
@@ -112,8 +113,14 @@ export async function POST(request) {
       title,
     })
 
-    // TODO: Send invitation email
-    // await sendInvitationEmail(invitation, organization)
+    // Send invitation email
+    try {
+      await sendInvitationEmail(invitation, organization)
+      console.log('[Invitation] Email sent to:', email)
+    } catch (emailError) {
+      console.error('[Invitation] Failed to send email:', emailError)
+      // Don't fail the request if email fails - invitation is still valid
+    }
 
     // Log audit event
     await logAuditEvent({

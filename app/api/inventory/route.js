@@ -137,6 +137,12 @@ export async function POST(request) {
       donorName,
       donorEmail,
       volume = 450,
+      // New: drive association (optional)
+      driveId,
+      driveName,
+      component = 'whole_blood',
+      technician,
+      notes,
     } = body
 
     // Auto-generate unitId if not provided

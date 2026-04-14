@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Droplet, LayoutDashboard, Users, Package, AlertCircle, Hospital, BarChart3, Settings, LogOut, Building2, Shield, Crown } from 'lucide-react'
+import { Droplet, LayoutDashboard, Users, Package, AlertCircle, Hospital, BarChart3, Settings, LogOut, Building2, Shield, Crown, MessageSquare, ClipboardList } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/components/auth/auth-provider'
 
@@ -60,6 +60,20 @@ const teamNavItem = {
   icon: Users,
 }
 
+// Join requests - for org_admin only
+const joinRequestsNavItem = {
+  label: 'Join Requests',
+  href: '/dashboard/settings/team/requests',
+  icon: ClipboardList,
+}
+
+// SMS Metrics - for org_admin and super_admin
+const smsMetricsNavItem = {
+  label: 'SMS Metrics',
+  href: '/dashboard/sms-metrics',
+  icon: MessageSquare,
+}
+
 // Organizations list - for super_admin only
 const organizationsNavItem = {
   label: 'Organizations',
@@ -74,6 +88,12 @@ const superAdminNavItems = [
     href: '/dashboard/super-admin',
     icon: Shield,
     description: 'Manage all organizations & users',
+  },
+  {
+    label: 'Org Requests',
+    href: '/dashboard/super-admin/org-requests',
+    icon: ClipboardList,
+    description: 'Review org creation requests',
   },
 ]
 
@@ -111,6 +131,7 @@ export function Sidebar() {
 
   const isSuperAdmin = user?.role === 'super_admin'
   const isOrgAdmin = user?.role === 'org_admin'
+  const isPending = user?.accountStatus === 'pending_approval' || user?.role === 'pending'
   const userOrg = user?.organizationName
 
   return (
@@ -175,27 +196,43 @@ export function Sidebar() {
         <div className="text-xs font-semibold text-foreground/50 uppercase tracking-wider mb-3 px-4">
           Main Menu
         </div>
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-foreground/70 hover:bg-secondary/20 hover:text-foreground'
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              {item.label}
-            </Link>
-          )
-        })}
 
-        {/* Divider */}
-        <div className="my-4 border-t border-border"></div>
+        {/* For pending users, ONLY show Dashboard */}
+        {isPending ? (
+          <Link
+            href="/dashboard"
+            className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+              pathname === '/dashboard'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-foreground/70 hover:bg-secondary/20 hover:text-foreground'
+            }`}
+          >
+            <LayoutDashboard className="w-5 h-5" />
+            Dashboard
+          </Link>
+        ) : (
+          <>
+            {navItems.map((item) => {
+              const Icon = item.icon
+              const isActive = pathname === item.href
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-foreground/70 hover:bg-secondary/20 hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  {item.label}
+                </Link>
+              )
+            })}
+
+            {/* Divider */}
+            <div className="my-4 border-t border-border"></div>
 
         {/* Donation Drives - org_admin and super_admin */}
         {(isOrgAdmin || isSuperAdmin) && (
@@ -229,16 +266,44 @@ export function Sidebar() {
 
         {/* Team Management - org_admin only */}
         {isOrgAdmin && (
+          <>
+            <Link
+              href={teamNavItem.href}
+              className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                pathname === teamNavItem.href
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-foreground/70 hover:bg-secondary/20 hover:text-foreground'
+              }`}
+            >
+              <teamNavItem.icon className="w-5 h-5" />
+              {teamNavItem.label}
+            </Link>
+            <Link
+              href={joinRequestsNavItem.href}
+              className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                pathname === joinRequestsNavItem.href
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-foreground/70 hover:bg-secondary/20 hover:text-foreground'
+              }`}
+            >
+              <joinRequestsNavItem.icon className="w-5 h-5" />
+              {joinRequestsNavItem.label}
+            </Link>
+          </>
+        )}
+
+        {/* SMS Metrics - org_admin and super_admin */}
+        {(isOrgAdmin || isSuperAdmin) && (
           <Link
-            href={teamNavItem.href}
+            href={smsMetricsNavItem.href}
             className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
-              pathname === teamNavItem.href
+              pathname === smsMetricsNavItem.href
                 ? 'bg-primary text-primary-foreground'
                 : 'text-foreground/70 hover:bg-secondary/20 hover:text-foreground'
             }`}
           >
-            <teamNavItem.icon className="w-5 h-5" />
-            {teamNavItem.label}
+            <smsMetricsNavItem.icon className="w-5 h-5" />
+            {smsMetricsNavItem.label}
           </Link>
         )}
 
@@ -256,17 +321,22 @@ export function Sidebar() {
             {organizationsNavItem.label}
           </Link>
         )}
+          </>
+        )}
       </nav>
 
       {/* Bottom Actions */}
       <div className="border-t border-border space-y-2 px-4 py-4">
-        <Link
-          href="/dashboard/settings"
-          className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors text-foreground/70 hover:bg-secondary/20 hover:text-foreground"
-        >
-          <Settings className="w-5 h-5" />
-          Settings
-        </Link>
+        {/* Settings - Hidden for pending users */}
+        {!isPending && (
+          <Link
+            href="/dashboard/settings"
+            className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors text-foreground/70 hover:bg-secondary/20 hover:text-foreground"
+          >
+            <Settings className="w-5 h-5" />
+            Settings
+          </Link>
+        )}
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-foreground/70 hover:bg-red-50/10 hover:text-red-600 transition-colors"

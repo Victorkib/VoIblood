@@ -84,23 +84,43 @@ export async function GET(request) {
     const bloodType = searchParams.get('bloodType')
     const status = searchParams.get('status')
     const search = searchParams.get('search')
+    const driveId = searchParams.get('driveId') // New: filter by drive
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '10')
 
-    // Build query
-    const query = { organizationId }
+    // Build query - include donors with organizationId OR driveToken matching org's drives
+    // This ensures drive registrants appear even if organizationId wasn't set initially
+    const DonationDrive = (await import('@/lib/models/DonationDrive')).default
+    const orgDrives = await DonationDrive.find({ organizationId })
+    const orgDriveTokens = orgDrives.map(d => d.registrationToken)
+
+    const query = {
+      $or: [
+        { organizationId },
+        { driveToken: { $in: orgDriveTokens } }
+      ]
+    }
 
     if (bloodType) query.bloodType = bloodType
-    if (status) query.donationStatus = status
+    if (status) query.status = status
+
+    // Filter by specific drive if provided
+    if (driveId) {
+      const drive = await DonationDrive.findById(driveId)
+      if (drive) {
+        query.driveToken = drive.registrationToken
+      }
+    }
 
     if (search) {
       const searchRegex = new RegExp(search, 'i')
-      query.$or = [
+      query.$or = query.$or || []
+      query.$or.push(
         { firstName: searchRegex },
         { lastName: searchRegex },
         { email: searchRegex },
         { phone: searchRegex },
-      ]
+      )
     }
 
     // Calculate skip

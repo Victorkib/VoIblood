@@ -1,26 +1,50 @@
 /**
- * GET /api/donors/[id] - Get a specific donor
- * PUT /api/donors/[id] - Update a donor
- * DELETE /api/donors/[id] - Delete a donor
+ * GET /api/donors/[id] - Get single donor details
  */
 
 import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import Donor from '@/lib/models/Donor'
+import { getCurrentUser } from '@/lib/session'
+import { canPerformAction } from '@/lib/rbac'
 
-/**
- * GET /api/donors/[id]
- */
 export async function GET(request, { params }) {
   try {
     await connectDB()
 
-    const donor = await Donor.findById(params.id)
+    const resolvedParams = await params
+    const { id } = resolvedParams
+
+    // Get user from session
+    const user = await getCurrentUser(request.cookies)
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    if (!canPerformAction(user, 'view', 'donors')) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions' },
+        { status: 403 }
+      )
+    }
+
+    const donor = await Donor.findById(id).lean()
 
     if (!donor) {
       return NextResponse.json(
         { error: 'Donor not found' },
         { status: 404 }
+      )
+    }
+
+    // Check org access
+    if (user.role !== 'super_admin' && donor.organizationId?.toString() !== user.organizationId) {
+      return NextResponse.json(
+        { error: 'Access denied' },
+        { status: 403 }
       )
     }
 
@@ -31,105 +55,7 @@ export async function GET(request, { params }) {
   } catch (error) {
     console.error('GET /api/donors/[id] error:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch donor', details: error.message },
-      { status: 500 }
-    )
-  }
-}
-
-/**
- * PUT /api/donors/[id]
- * Update donor information
- */
-export async function PUT(request, { params }) {
-  try {
-    await connectDB()
-
-    const body = await request.json()
-    const { id } = params
-
-    const donor = await Donor.findById(id)
-
-    if (!donor) {
-      return NextResponse.json(
-        { error: 'Donor not found' },
-        { status: 404 }
-      )
-    }
-
-    // Update allowed fields
-    const allowedFields = [
-      'firstName',
-      'lastName',
-      'email',
-      'phone',
-      'bloodType',
-      'dateOfBirth',
-      'gender',
-      'address',
-      'city',
-      'state',
-      'zipCode',
-      'country',
-      'weight',
-      'medicalConditions',
-      'allergies',
-      'medications',
-      'notes',
-      'consentGiven',
-      'consentDate',
-      'emergencyContactName',
-      'emergencyContactPhone',
-      'emergencyContactRelation',
-    ]
-
-    allowedFields.forEach(field => {
-      if (field in body) {
-        donor[field] = body[field]
-      }
-    })
-
-    const updatedDonor = await donor.save()
-
-    return NextResponse.json({
-      success: true,
-      message: 'Donor updated successfully',
-      data: updatedDonor,
-    })
-  } catch (error) {
-    console.error('PUT /api/donors/[id] error:', error)
-    return NextResponse.json(
-      { error: 'Failed to update donor', details: error.message },
-      { status: 500 }
-    )
-  }
-}
-
-/**
- * DELETE /api/donors/[id]
- */
-export async function DELETE(request, { params }) {
-  try {
-    await connectDB()
-
-    const donor = await Donor.findByIdAndDelete(params.id)
-
-    if (!donor) {
-      return NextResponse.json(
-        { error: 'Donor not found' },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Donor deleted successfully',
-      data: donor,
-    })
-  } catch (error) {
-    console.error('DELETE /api/donors/[id] error:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete donor', details: error.message },
+      { error: 'Failed to fetch donor details' },
       { status: 500 }
     )
   }

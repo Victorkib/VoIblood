@@ -15,8 +15,8 @@ export async function GET(request, { params }) {
   try {
     await connectDB()
 
-    const unit = await BloodInventory.findById(params.id)
-      .populate('donorId', 'firstName lastName email phone')
+    const resolvedParams = await params
+    const unit = await BloodInventory.findById(resolvedParams.id)
 
     if (!unit) {
       return NextResponse.json(

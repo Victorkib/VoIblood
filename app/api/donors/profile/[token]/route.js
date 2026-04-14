@@ -1,6 +1,6 @@
 /**
  * GET /api/donors/profile/[token] - Get donor profile by donorToken
- * 
+ *
  * Public endpoint - no authentication required
  * Uses donorToken (stored in localStorage after registration)
  */
@@ -16,7 +16,9 @@ export async function GET(request, { params }) {
   try {
     await connectDB()
 
-    const { token } = params
+    // Unwrap params Promise (Next.js 15+ requirement)
+    const resolvedParams = await params
+    const { token } = resolvedParams
 
     if (!token) {
       return NextResponse.json(

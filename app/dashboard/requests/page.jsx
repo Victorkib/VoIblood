@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Search } from 'lucide-react'
@@ -9,6 +10,7 @@ import { useAuth } from '@/components/auth/auth-provider'
 import { NewRequestModal } from '@/components/modals/new-request-modal'
 
 export default function RequestsPage() {
+  const router = useRouter()
   const [requests, setRequests] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -218,7 +220,12 @@ export default function RequestsPage() {
                         </td>
                         <td className="px-6 py-4 text-sm text-foreground/60">{formatDate(req.createdAt)}</td>
                         <td className="px-6 py-4 text-sm">
-                          <button className="text-accent hover:underline">View</button>
+                          <button
+                            className="text-accent hover:underline"
+                            onClick={() => router.push(`/dashboard/requests/${req.id || req._id}`)}
+                          >
+                            View
+                          </button>
                         </td>
                       </tr>
                     )

@@ -1,6 +1,6 @@
 /**
  * PUT /api/admin/drives/[id]/registrations/[registrationId]
- * Update registration status
+ * Update registration status with drive stats tracking and notifications
  */
 
 import { NextResponse } from 'next/server'
@@ -9,6 +9,7 @@ import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
 import DonationDrive from '@/lib/models/DonationDrive'
 import Donor from '@/lib/models/Donor'
+import { sendDonorStatusNotification } from '@/lib/notification-service'
 
 export async function PUT(request, { params }) {
   try {
@@ -23,9 +24,9 @@ export async function PUT(request, { params }) {
     }
 
     // Unwrap params Promise (Next.js 15 requirement)
-    const { id:driveId, registrationId } = await params
+    const { id: driveId, registrationId } = await params
     const body = await request.json()
-    const { status } = body
+    const { status, sendNotification = true } = body
 
     if (!status) {
       return NextResponse.json(
@@ -58,7 +59,7 @@ export async function PUT(request, { params }) {
       )
     }
 
-    // Find and update the donor registration
+    // Find the donor registration
     const donor = await Donor.findById(registrationId)
     if (!donor || donor.driveToken !== drive.registrationToken) {
       return NextResponse.json(
@@ -67,18 +68,46 @@ export async function PUT(request, { params }) {
       )
     }
 
-    // Update the donor status
-    donor.status = status
-    await donor.save()
+    // Track old status for stats updates
+    const oldStatus = donor.status
 
-    console.log('[Registration API] Updated status:', registrationId, 'to:', status)
+    // USE MONGODB NATIVE UPDATEONE to bypass Mongoose schema cache
+    // This ensures organizationId and driveId are saved even if the model cache is stale
+    const updateResult = await Donor.updateOne(
+      { _id: registrationId },
+      {
+        $set: {
+          status,
+          organizationId: drive.organizationId,
+          driveId: drive._id,
+        }
+      }
+    )
+
+    console.log('[Registration API] Update result:', updateResult)
+
+    // Update drive stats counters
+    await updateDriveStats(drive, oldStatus, status)
+
+    // Send notification to donor (if enabled)
+    if (sendNotification) {
+      try {
+        await sendDonorStatusNotification(donor, drive, status)
+      } catch (notifErr) {
+        console.warn('[Registration API] Failed to send notification:', notifErr.message)
+      }
+    }
+
+    console.log('[Registration API] Updated status:', registrationId, 'from', oldStatus, 'to', status)
 
     return NextResponse.json({
       success: true,
       message: `Registration status updated to ${status}`,
       data: {
         registrationId,
-        status,
+        oldStatus,
+        newStatus: status,
+        notificationSent: sendNotification,
         updatedAt: new Date().toISOString(),
       },
     })
@@ -92,8 +121,31 @@ export async function PUT(request, { params }) {
 }
 
 /**
+ * Update drive stats counters when donor status changes
+ */
+async function updateDriveStats(drive, oldStatus, newStatus) {
+  if (!drive.stats) {
+    drive.stats = { clicks: 0, registrations: 0, confirmed: 0, completed: 0 }
+  }
+
+  // Decrement old status counter
+  if (oldStatus === 'confirmed') {
+    drive.stats.confirmed = Math.max(0, (drive.stats.confirmed || 0) - 1)
+  }
+
+  // Increment new status counter
+  if (newStatus === 'confirmed') {
+    drive.stats.confirmed = (drive.stats.confirmed || 0) + 1
+  } else if (newStatus === 'completed') {
+    drive.stats.completed = (drive.stats.completed || 0) + 1
+  }
+
+  await drive.save()
+}
+
+/**
  * POST /api/admin/drives/[id]/registrations/bulk-checkin
- * Check in all registered donors
+ * Check in all registered donors with notifications
  */
 
 export async function POST(request, { params }) {
@@ -109,7 +161,7 @@ export async function POST(request, { params }) {
     }
 
     // Unwrap params Promise (Next.js 15 requirement)
-    const { id:driveId } = await params
+    const { id: driveId } = await params
 
     // Get drive and check permissions
     const drive = await DonationDrive.findById(driveId)
@@ -127,24 +179,41 @@ export async function POST(request, { params }) {
       )
     }
 
-    // Update all registered donors to checked_in status
-    const result = await Donor.updateMany(
-      { 
+    // Find all donors eligible for check-in
+    const donors = await Donor.find({
+      driveToken: drive.registrationToken,
+      status: { $in: ['registered', 'confirmed'] }
+    })
+
+    // USE MONGODB NATIVE UPDATEMANY to bypass Mongoose schema cache
+    // This ensures organizationId and driveId are saved for all donors
+    const updateResult = await Donor.updateMany(
+      {
         driveToken: drive.registrationToken,
         status: { $in: ['registered', 'confirmed'] }
       },
-      { 
-        status: 'checked_in',
-        updatedAt: new Date()
+      {
+        $set: {
+          status: 'checked_in',
+          organizationId: drive.organizationId,
+          driveId: drive._id,
+        }
       }
     )
 
-    console.log('[Registration API] Bulk checked in', result.modifiedCount, 'donors for drive:', driveId)
+    const checkedInCount = updateResult.modifiedCount || 0
+
+    console.log('[Registration API] Bulk check-in update:', updateResult)
+
+    // Update drive stats
+    await updateDriveStatsBulk(drive, checkedInCount)
+
+    console.log('[Registration API] Bulk checked in', checkedInCount, 'donors for drive:', driveId)
 
     return NextResponse.json({
       success: true,
       message: 'Bulk check-in completed',
-      checkedIn: result.modifiedCount,
+      checkedIn: checkedInCount,
     })
   } catch (error) {
     console.error('POST /api/admin/drives/[id]/registrations/bulk-checkin error:', error)
@@ -153,4 +222,17 @@ export async function POST(request, { params }) {
       { status: 500 }
     )
   }
+}
+
+/**
+ * Update drive stats for bulk check-in
+ */
+async function updateDriveStatsBulk(drive, count) {
+  if (!drive.stats) {
+    drive.stats = { clicks: 0, registrations: 0, confirmed: 0, completed: 0 }
+  }
+
+  // Move confirmed count to completed (they're now checked in)
+  drive.stats.confirmed = Math.max(0, (drive.stats.confirmed || 0) - count)
+  await drive.save()
 }

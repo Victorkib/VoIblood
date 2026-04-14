@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,11 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
     volume: '450',
     collectionDate: new Date().toISOString().split('T')[0],
     collectionMethod: 'venipuncture',
+    // New fields
+    driveId: '',
+    driveName: '',
+    technician: '',
+    notes: '',
     testResults: {
       hiv: 'negative',
       hepatitisB: 'negative',
@@ -31,6 +36,37 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
   const [fieldErrors, setFieldErrors] = useState({})
   const [donorSelectorOpen, setDonorSelectorOpen] = useState(false)
   const [quickDonorOpen, setQuickDonorOpen] = useState(false)
+  
+  // Drive selection
+  const [drives, setDrives] = useState([])
+  const [drivesLoading, setDrivesLoading] = useState(false)
+  
+  // Fetch drives on mount
+  useEffect(() => {
+    if (isOpen && organizationId) {
+      fetchDrives()
+    }
+  }, [isOpen, organizationId])
+
+  const fetchDrives = async () => {
+    try {
+      setDrivesLoading(true)
+      const res = await fetch(`/api/admin/drives?status=&search=`)
+      if (res.ok) {
+        const data = await res.json()
+        console.log("Drives data:", data)
+        // Filter by organization
+        const orgDrives = (data.data || []).filter(d => 
+          d.organizationId === organizationId || d.organizationId?._id === organizationId
+        )
+        setDrives(orgDrives)
+      }
+    } catch (err) {
+      console.error('Failed to fetch drives:', err)
+    } finally {
+      setDrivesLoading(false)
+    }
+  }
   const { validate } = useFormValidation('inventory')
 
   const bloodTypes = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']
@@ -185,6 +221,59 @@ export function RecordCollectionModal({ isOpen, onClose, onSuccess, organization
                 <p className="text-xs text-green-700">{formData.donorEmail} • {formData.bloodType}</p>
               </div>
             )}
+          </div>
+
+          {/* Drive Association (Optional) */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-foreground">
+              Donation Drive <span className="text-gray-400 font-normal">(Optional)</span>
+            </label>
+            <select
+              value={formData.driveId}
+              onChange={(e) => {
+                const selectedDrive = drives.find(d => d.id === e.target.value || d._id === e.target.value)
+                setFormData(prev => ({
+                  ...prev,
+                  driveId: selectedDrive?.id || selectedDrive?._id || '',
+                  driveName: selectedDrive?.name || '',
+                }))
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={drivesLoading || drives.length === 0}
+            >
+              <option value="">-- Select a drive (optional) --</option>
+              {drives.map((drive) => (
+                <option key={drive.id || drive._id} value={drive.id || drive._id}>
+                  {drive.name} • {new Date(drive.date).toLocaleDateString()}
+                </option>
+              ))}
+            </select>
+            {drivesLoading && <p className="text-xs text-gray-500">Loading drives...</p>}
+            {!drivesLoading && drives.length === 0 && (
+              <p className="text-xs text-gray-500">No drives available for this organization</p>
+            )}
+          </div>
+
+          {/* Technician & Notes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">Technician <span className="text-gray-400 font-normal">(Optional)</span></label>
+              <Input
+                type="text"
+                value={formData.technician}
+                onChange={(e) => setFormData(prev => ({ ...prev, technician: e.target.value }))}
+                placeholder="Who collected this?"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">Collection Notes <span className="text-gray-400 font-normal">(Optional)</span></label>
+              <Input
+                type="text"
+                value={formData.notes}
+                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Any additional notes..."
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
