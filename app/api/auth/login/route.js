@@ -126,6 +126,12 @@ export async function POST(request) {
       )
     }
 
+    // Super admins are always active (no approval needed)
+    if (mongoUser.role === 'super_admin' && mongoUser.accountStatus !== 'active') {
+      mongoUser.accountStatus = 'active'
+      await mongoUser.save()
+    }
+
     // Create session cookie data
     const sessionData = createSessionCookie(mongoUser, session)
 

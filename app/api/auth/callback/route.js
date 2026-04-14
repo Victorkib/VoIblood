@@ -14,7 +14,6 @@ import User from '@/lib/models/User'
 import Organization from '@/lib/models/Organization'
 import JoinRequest from '@/lib/models/JoinRequest'
 import OrganizationRequest from '@/lib/models/OrganizationRequest'
-import PendingSignup from '@/lib/models/PendingSignup'
 import { sendRequestReceivedEmail } from '@/lib/org-request-emails'
 
 export async function GET(request) {
@@ -82,103 +81,12 @@ export async function GET(request) {
     if (!mongoUser) {
       console.log('[Callback] Creating new MongoDB user for:', user.email)
 
-      // Try to get signup intent from PendingSignup collection (most reliable)
-      let signupIntent = {}
-      try {
-        const pendingSignup = await PendingSignup.findOne({ email: user.email.toLowerCase() })
-        if (pendingSignup) {
-          signupIntent = {
-            orgSelection: pendingSignup.orgSelection,
-            selectedOrg: pendingSignup.selectedOrg,
-            requestMessage: pendingSignup.requestMessage,
-            requestedRole: pendingSignup.requestedRole,
-            orgName: pendingSignup.orgName,
-            orgType: pendingSignup.orgType,
-            orgDescription: pendingSignup.orgDescription,
-            orgMotivation: pendingSignup.orgMotivation,
-            bio: pendingSignup.bio,
-            title: pendingSignup.title,
-            inviteToken: pendingSignup.inviteToken,
-          }
-          console.log('[Callback] Found signup intent in PendingSignup:', signupIntent.orgSelection, signupIntent.orgType)
-          
-          // Delete the pending signup record since we've processed it
-          await PendingSignup.deleteOne({ email: user.email.toLowerCase() })
-          console.log('[Callback] Deleted PendingSignup record for:', user.email)
-        }
-      } catch (e) {
-        console.warn('[Callback] Failed to read PendingSignup:', e.message)
-      }
-
-      // Fallback to cookie if PendingSignup is empty
-      if (!signupIntent.orgSelection) {
-        try {
-          const signupIntentCookie = request.cookies.get('signup-intent')
-          if (signupIntentCookie?.value) {
-            signupIntent = JSON.parse(signupIntentCookie.value)
-            console.log('[Callback] Found signup intent in cookie:', signupIntent.orgSelection)
-          }
-        } catch (e) {
-          console.warn('[Callback] Failed to parse signup intent cookie:', e.message)
-        }
-      }
-
-      // Fallback to Supabase user_metadata if still empty
-      if (!signupIntent.orgSelection && fullUser.user_metadata?.signup_intent) {
-        signupIntent = fullUser.user_metadata.signup_intent
-        console.log('[Callback] Found signup intent in Supabase metadata:', signupIntent.orgSelection, signupIntent.orgType)
-      }
-
-      // Default values
-      const {
-        orgSelection = 'create',
-        selectedOrg,
-        requestMessage,
-        requestedRole,
-        orgName,
-        orgType,
-        orgDescription,
-        orgMotivation,
-        bio,
-        title,
-      } = signupIntent
-
       // Initialize user variables
       let organizationId = null
       let organizationName = null
       let role = 'pending'
       let accountStatus = 'pending_approval'
       let invitedBy = null
-
-      // Handle different signup flows
-      if (signupIntent.inviteToken) {
-        // Flow 1: Invitation token signup
-        role = 'pending'
-        accountStatus = 'pending_approval'
-      } else if (orgSelection === 'join' && selectedOrg) {
-        // Flow 2: Join existing organization (pending approval)
-        const org = await Organization.findById(selectedOrg)
-        if (!org || !org.isActive) {
-          console.warn('[Callback] Organization not found for join request:', selectedOrg)
-          // Still create user but without org
-        } else {
-          organizationId = org._id
-          organizationName = org.name
-        }
-        role = 'pending'
-        accountStatus = 'pending_approval'
-
-      } else if (orgSelection === 'create') {
-        // Flow 3: Request to create new organization (pending SUPER ADMIN approval)
-        role = 'pending'
-        accountStatus = 'pending_approval'
-        organizationName = orgName || `${fullUser.user_metadata?.full_name || fullUser.email?.split('@')[0]}'s Organization`
-
-        // Validate org type - if missing, we'll still create user but won't create request
-        if (!orgType || !['blood_bank', 'hospital', 'transfusion_center', 'ngo'].includes(orgType)) {
-          console.warn('[Callback] Invalid or missing org type:', orgType, '- creating user without org request')
-        }
-      }
 
       // Create user in MongoDB
       console.log('[Callback] Creating MongoDB user with status:', accountStatus)
@@ -192,8 +100,8 @@ export async function GET(request) {
         emailVerified: true, // Email is confirmed at this point
         accountStatus: accountStatus,
         invitedBy: invitedBy,
-        bio: bio || '',
-        title: title || '',
+        bio: '',
+        title: '',
         providers: user.app_metadata?.providers?.map(p => ({
           provider: p,
           providerId: user.id,
@@ -202,69 +110,38 @@ export async function GET(request) {
 
       console.log('[Callback] MongoDB user created:', mongoUser._id)
 
-      // If joining org, create join request
-      if (orgSelection === 'join' && selectedOrg) {
-        await JoinRequest.create({
-          userId: mongoUser._id,
-          organizationId: selectedOrg,
-          requestedRole: requestedRole || 'viewer',
-          message: requestMessage || '',
-          status: 'pending',
+      // Update OrganizationRequest: change status from 'pending_email_verification' to 'pending'
+      // and link the userId
+      try {
+        const orgRequest = await OrganizationRequest.findOne({
+          userEmail: user.email.toLowerCase(),
+          status: 'pending_email_verification',
         })
-        console.log('[Callback] JoinRequest created for org:', selectedOrg)
 
-        // Send request received email to user
-        try {
-          const org = await Organization.findById(selectedOrg)
-          await sendRequestReceivedEmail({
-            to: mongoUser.email,
-            fullName: mongoUser.fullName,
-            requestType: 'join',
-            orgName: org?.name || 'the organization',
-            requestedRole: requestedRole || 'viewer',
-          })
-        } catch (emailErr) {
-          console.warn('[Callback] Failed to send request received email:', emailErr.message)
+        if (orgRequest) {
+          orgRequest.status = 'pending'
+          orgRequest.userId = mongoUser._id
+          await orgRequest.save()
+          console.log('[Callback] OrganizationRequest activated for:', orgRequest.requestedOrgName)
+
+          // Send request received email to user
+          try {
+            await sendRequestReceivedEmail({
+              to: mongoUser.email,
+              fullName: mongoUser.fullName,
+              requestType: 'create_org',
+              orgName: orgRequest.requestedOrgName,
+              requestedRole: 'org_admin',
+            })
+            console.log('[Callback] Request received email sent to:', mongoUser.email)
+          } catch (emailErr) {
+            console.warn('[Callback] Failed to send email:', emailErr.message)
+          }
+        } else {
+          console.log('[Callback] No pending OrganizationRequest found for:', user.email)
         }
-      }
-
-      // If creating org, create OrganizationRequest for super admin review
-      if (orgSelection === 'create') {
-        // Use default type if missing
-        const finalOrgType = orgType || 'blood_bank'
-        
-        await OrganizationRequest.create({
-          userId: mongoUser._id,
-          organizationId: null, // Will be set when super admin approves
-          requestedRole: 'org_admin',
-          motivation: orgMotivation || `Request to create ${orgName}`,
-          userBio: bio || '',
-          userTitle: title || '',
-          preferredDepartment: '',
-          reason: `Request to create new organization: ${orgName}`,
-          experience: '',
-          availability: 'full-time',
-          // Additional fields for org creation
-          requestedOrgName: orgName || `${mongoUser.fullName}'s Organization`,
-          requestedOrgType: finalOrgType,
-          requestedOrgDescription: orgDescription || '',
-          requestType: 'create_org',
-          status: 'pending',
-        })
-        console.log('[Callback] OrganizationRequest created for:', orgName, 'type:', finalOrgType)
-
-        // Send request received email to user
-        try {
-          await sendRequestReceivedEmail({
-            to: mongoUser.email,
-            fullName: mongoUser.fullName,
-            requestType: 'create_org',
-            orgName: orgName || `${mongoUser.fullName}'s Organization`,
-            requestedRole: 'org_admin',
-          })
-        } catch (emailErr) {
-          console.warn('[Callback] Failed to send request received email:', emailErr.message)
-        }
+      } catch (orgErr) {
+        console.warn('[Callback] Failed to update OrganizationRequest:', orgErr.message)
       }
 
       // Clear the signup intent cookie since we've processed it

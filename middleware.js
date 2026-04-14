@@ -1,10 +1,14 @@
 /**
  * Next.js Middleware - Route Protection
- * 
+ *
  * Redirects users based on their authentication status and account state:
  * - Unauthenticated users → /auth/login
  * - Users with accountStatus 'pending_approval' → /pending-approval (except auth routes)
  * - All other authenticated users → allowed access
+ *
+ * Note: Middleware runs in Edge Runtime which doesn't support MongoDB.
+ * Account status is read from the session cookie, which is set by the login route
+ * after fetching fresh data from MongoDB.
  */
 
 import { NextResponse } from 'next/server'
@@ -34,7 +38,7 @@ const alwaysAllowed = [
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl
-  
+
   // Allow public routes
   if (publicRoutes.some(route => pathname.startsWith(route))) {
     return NextResponse.next()
@@ -47,7 +51,7 @@ export async function middleware(request) {
 
   // Check for auth session cookie
   const sessionCookie = request.cookies.get('auth-session')
-  
+
   if (!sessionCookie?.value) {
     // Not authenticated - redirect to login
     const loginUrl = new URL('/auth/login', request.url)
@@ -57,7 +61,7 @@ export async function middleware(request) {
 
   try {
     const session = JSON.parse(sessionCookie.value)
-    const { accountStatus, role } = session.user || {}
+    const { accountStatus } = session.user || {}
 
     // If user is pending approval, redirect to pending-approval page
     // But allow access to auth routes, api routes, and pending-approval page itself
@@ -92,13 +96,6 @@ export async function middleware(request) {
 // Configure which routes this middleware runs on
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public files (sw.js, etc.)
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

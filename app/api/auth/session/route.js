@@ -11,9 +11,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import { connectDB } from '@/lib/db'
 import User from '@/lib/models/User'
-import Organization from '@/lib/models/Organization'
 import OrganizationRequest from '@/lib/models/OrganizationRequest'
-import PendingSignup from '@/lib/models/PendingSignup'
 import { sendRequestReceivedEmail } from '@/lib/org-request-emails'
 
 export async function GET(request) {
@@ -77,32 +75,20 @@ export async function GET(request) {
 
       console.log('[Session] Creating MongoDB user from Supabase:', supabaseUser.email)
 
-      // Check if user has signup intent in PendingSignup
-      let signupIntent = null
-      try {
-        signupIntent = await PendingSignup.findOne({ email: supabaseUser.email.toLowerCase() })
-        if (signupIntent) {
-          console.log('[Session] Found PendingSignup for:', supabaseUser.email, '- type:', signupIntent.orgType)
-        }
-      } catch (e) {
-        console.warn('[Session] Failed to read PendingSignup:', e.message)
-      }
-
       // Check if user has organization info in metadata
       const hasOrganization = !!supabaseUser.user_metadata?.organization_name
 
       // Create MongoDB user from Supabase data
-      // Use pending_approval status if no org, active if they have org
       user = await User.create({
         supabaseId: supabaseUser.id,
         email: supabaseUser.email,
         fullName: supabaseUser.user_metadata?.full_name || supabaseUser.email.split('@')[0],
-        role: signupIntent?.orgSelection === 'create' ? 'pending' : (supabaseUser.user_metadata?.role || 'pending'),
+        role: 'pending',
         accountStatus: hasOrganization ? 'active' : 'pending_approval',
         emailVerified: supabaseUser.email_confirmed_at ? true : false,
         avatarUrl: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
-        organizationName: signupIntent?.orgName || supabaseUser.user_metadata?.organization_name || null,
-        organizationId: null, // Will be set when added to org or org created
+        organizationName: supabaseUser.user_metadata?.organization_name || null,
+        organizationId: null,
         providers: supabaseUser.identities?.map(identity => ({
           provider: identity.provider,
           providerId: identity.id,
@@ -112,30 +98,18 @@ export async function GET(request) {
 
       console.log('[Session] MongoDB user created:', user.email, '- status:', user.accountStatus)
 
-      // If PendingSignup exists and user is creating org, create OrganizationRequest
-      if (signupIntent && signupIntent.orgSelection === 'create') {
-        try {
-          const finalOrgType = signupIntent.orgType || 'blood_bank'
-          
-          await OrganizationRequest.create({
-            userId: user._id,
-            organizationId: null,
-            requestedRole: 'org_admin',
-            motivation: signupIntent.orgMotivation || `Request to create ${signupIntent.orgName}`,
-            userBio: signupIntent.bio || '',
-            userTitle: signupIntent.title || '',
-            preferredDepartment: '',
-            reason: `Request to create new organization: ${signupIntent.orgName}`,
-            experience: '',
-            availability: 'full-time',
-            requestedOrgName: signupIntent.orgName || `${user.fullName}'s Organization`,
-            requestedOrgType: finalOrgType,
-            requestedOrgDescription: signupIntent.orgDescription || '',
-            requestType: 'create_org',
-            status: 'pending',
-          })
+      // Update OrganizationRequest: change status from 'pending_email_verification' to 'pending'
+      try {
+        const orgRequest = await OrganizationRequest.findOne({
+          userEmail: supabaseUser.email.toLowerCase(),
+          status: 'pending_email_verification',
+        })
 
-          console.log('[Session] OrganizationRequest created for:', signupIntent.orgName)
+        if (orgRequest) {
+          orgRequest.status = 'pending'
+          orgRequest.userId = user._id
+          await orgRequest.save()
+          console.log('[Session] OrganizationRequest activated for:', orgRequest.requestedOrgName)
 
           // Send request received email
           try {
@@ -143,20 +117,16 @@ export async function GET(request) {
               to: user.email,
               fullName: user.fullName,
               requestType: 'create_org',
-              orgName: signupIntent.orgName || `${user.fullName}'s Organization`,
+              orgName: orgRequest.requestedOrgName,
               requestedRole: 'org_admin',
             })
             console.log('[Session] Request received email sent to:', user.email)
           } catch (emailErr) {
             console.warn('[Session] Failed to send email:', emailErr.message)
           }
-
-          // Delete PendingSignup
-          await PendingSignup.deleteOne({ email: supabaseUser.email.toLowerCase() })
-          console.log('[Session] Deleted PendingSignup for:', supabaseUser.email)
-        } catch (orgErr) {
-          console.error('[Session] Failed to create OrganizationRequest:', orgErr.message)
         }
+      } catch (orgErr) {
+        console.warn('[Session] Failed to update OrganizationRequest:', orgErr.message)
       }
     }
 

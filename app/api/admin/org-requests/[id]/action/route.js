@@ -67,11 +67,30 @@ export async function POST(request, { params }) {
     }
 
     if (action === 'approve') {
-      // Create the organization
+      // Ensure userId exists
+      if (!orgRequest.userId) {
+        // Try to find user by email
+        const userByEmail = await User.findOne({ email: orgRequest.userEmail?.toLowerCase() })
+        if (!userByEmail) {
+          return NextResponse.json(
+            { error: 'User not found for this request' },
+            { status: 404 }
+          )
+        }
+        orgRequest.userId = userByEmail
+      }
+
+      // Create the organization with ALL required fields
       const newOrg = await Organization.create({
         name: orgRequest.requestedOrgName,
         type: orgRequest.requestedOrgType,
-        description: orgRequest.requestedOrgDescription || '',
+        description: orgRequest.requestedOrgDescription || `${orgRequest.requestedOrgName} - Blood donation organization`,
+        email: orgRequest.userId.email,
+        phone: orgRequest.userId.phone || '+254700000000',
+        address: orgRequest.requestedOrgDescription || 'Address to be updated',
+        city: 'Nairobi',
+        state: 'Nairobi County',
+        country: 'Kenya',
         createdBy: orgRequest.userId._id,
         isActive: true,
         accountStatus: 'active',

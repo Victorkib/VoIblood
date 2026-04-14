@@ -16,7 +16,6 @@ import Invitation from '@/lib/models/Invitation'
 import Organization from '@/lib/models/Organization'
 import JoinRequest from '@/lib/models/JoinRequest'
 import OrganizationRequest from '@/lib/models/OrganizationRequest'
-import PendingSignup from '@/lib/models/PendingSignup'
 import { sendRequestReceivedEmail } from '@/lib/org-request-emails'
 
 export async function POST(request) {
@@ -79,28 +78,6 @@ export async function POST(request) {
       )
     }
 
-    // Save signup intent to MongoDB so callback can retrieve it reliably
-    // This works regardless of cookies or Supabase metadata behavior
-    await PendingSignup.findOneAndUpdate(
-      { email: sanitizedEmail },
-      {
-        supabaseId: '', // Will be updated after Supabase signup
-        orgSelection,
-        selectedOrg,
-        requestMessage,
-        requestedRole,
-        orgName: orgName || `${sanitizedFullName}'s Organization`,
-        orgType,
-        orgDescription,
-        orgMotivation,
-        bio,
-        title,
-        inviteToken,
-      },
-      { upsert: true, returnDocument: 'after' }
-    )
-    console.log('[Signup] Saved signup intent to PendingSignup for:', sanitizedEmail)
-
     // Create Supabase client
     const supabase = createServerClient()
 
@@ -154,53 +131,44 @@ export async function POST(request) {
 
     const { user: supabaseUser, session } = data
 
-    // Update PendingSignup with the Supabase ID
-    await PendingSignup.findOneAndUpdate(
-      { email: sanitizedEmail },
-      { supabaseId: supabaseUser.id }
-    )
+    // If user is creating an organization, create OrganizationRequest IMMEDIATELY
+    // Status is 'pending_email_verification' - changes to 'pending' after email verified
+    // Super admin only sees 'pending' requests (not unverified ones)
+    if (orgSelection === 'create' && supabaseUser) {
+      const finalOrgType = orgType || 'blood_bank'
+      
+      // Set expiry (30 days from now) - explicitly set required field
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + 30)
+      
+      const orgRequest = await OrganizationRequest.create({
+        // userId omitted - will be set when user is created in MongoDB (callback/session)
+        // organizationId omitted - no org exists yet for create_org requests
+        requestedRole: 'org_admin',
+        motivation: orgMotivation || `Request to create ${orgName}`,
+        userBio: bio || '',
+        userTitle: title || '',
+        preferredDepartment: '',
+        reason: `Request to create new organization: ${orgName}`,
+        experience: '',
+        availability: 'full-time',
+        requestedOrgName: orgName || `${sanitizedFullName}'s Organization`,
+        requestedOrgType: finalOrgType,
+        requestedOrgDescription: orgDescription || '',
+        requestType: 'create_org',
+        status: 'pending_email_verification', // Changes to 'pending' after email verified
+        userEmail: sanitizedEmail, // Store email so we can find it later
+        expiresAt, // Explicitly set required field
+      })
+      console.log('[Signup] OrganizationRequest created (pending email verification) for:', orgName)
+    }
 
-    // Store signup intent in a cookie so callback can read it
-    // This is more reliable than Supabase user_metadata for server-side callbacks
+    // Return success - user will be created in callback/session after email verification
     const response = NextResponse.json({
       success: true,
       message: 'Check your email to confirm your account',
       requiresEmailConfirmation: true,
       email: sanitizedEmail,
-      signupIntent: {
-        orgSelection,
-        selectedOrg,
-        requestMessage,
-        requestedRole,
-        orgName: orgName || `${sanitizedFullName}'s Organization`,
-        orgType,
-        orgDescription,
-        orgMotivation,
-        bio,
-        title,
-      }
-    })
-
-    // Set signup intent cookie for callback to read
-    response.cookies.set({
-      name: 'signup-intent',
-      value: JSON.stringify({
-        orgSelection,
-        selectedOrg,
-        requestMessage,
-        requestedRole,
-        orgName: orgName || `${sanitizedFullName}'s Organization`,
-        orgType,
-        orgDescription,
-        orgMotivation,
-        bio,
-        title,
-      }),
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: '/',
     })
 
     return response

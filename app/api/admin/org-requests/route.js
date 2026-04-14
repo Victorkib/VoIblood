@@ -35,8 +35,9 @@ export async function GET(request) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
 
-    const query = { requestType: 'create_org' }
-    if (status !== 'all') query.status = status
+    // Only show 'pending' requests (not 'pending_email_verification')
+    // Super admin should only see email-verified requests
+    const query = { requestType: 'create_org', status: 'pending' }
 
     const skip = (page - 1) * limit
 
