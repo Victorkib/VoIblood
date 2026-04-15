@@ -101,6 +101,7 @@ export default function RegisterPage() {
       await fetch(`/api/register/track`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({ token, action: 'click' }),
       }).catch(() => {}) // Ignore errors
 
@@ -149,6 +150,7 @@ export default function RegisterPage() {
       const res = await fetch('/api/register/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           phone: formData.phone,
           email: formData.email,
@@ -210,6 +212,7 @@ export default function RegisterPage() {
       const res = await fetch('/api/register/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           phone: formData.phone,
           email: formData.email,
@@ -296,6 +299,7 @@ export default function RegisterPage() {
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           ...formData,
           driveToken: params.token,

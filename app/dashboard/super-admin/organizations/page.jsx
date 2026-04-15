@@ -161,6 +161,7 @@ export default function OrganizationsPage() {
       const res = await fetch('/api/admin/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify(createForm),
       })
       
@@ -203,6 +204,7 @@ export default function OrganizationsPage() {
       const res = await fetch(`/api/admin/organizations/${selectedOrg.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify(editForm),
       })
       
@@ -233,6 +235,7 @@ export default function OrganizationsPage() {
     try {
       const res = await fetch(`/api/admin/organizations/${selectedOrg.id}`, {
         method: 'DELETE',
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
       })
       
       const data = await res.json()

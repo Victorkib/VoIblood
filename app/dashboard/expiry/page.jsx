@@ -89,6 +89,7 @@ export default function ExpiryPage() {
       const response = await fetch(`/api/inventory/${unitId}/actions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({ action: 'discard', reason: 'Expired' }),
       })
 

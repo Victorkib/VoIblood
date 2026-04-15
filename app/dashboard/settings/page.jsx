@@ -29,9 +29,9 @@ export default function SettingsPage() {
     if (authUser) {
       setUser(authUser)
       setFormData({
-        fullName: authUser.name || '',
+        fullName: authUser.fullName || authUser.name || '',
         email: authUser.email || '',
-        organization: authUser.organizationName || '',
+        organization: authUser.organizationName || 'Not assigned',
       })
     }
   }, [authUser])
@@ -55,15 +55,24 @@ export default function SettingsPage() {
       const response = await fetch('/api/settings/user', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
+        body: JSON.stringify({ fullName: formData.fullName }),
       })
 
-      if (!response.ok) throw new Error('Failed to update account')
+      const data = await response.json()
+
+      if (!response.ok) throw new Error(data.error || 'Failed to update account')
+
+      // Update the auth context with the new data
+      if (data.data) {
+        // Trigger a session refresh to get the updated user data
+        await fetch('/api/auth/session')
+      }
 
       setSuccess('Account updated successfully')
       setTimeout(() => setSuccess(null), 3000)
     } catch (err) {
-      console.error('[v0] Save account error:', err)
+      console.error('[Settings] Save account error:', err)
       setError(err.message)
     } finally {
       setLoading(false)
@@ -87,6 +96,7 @@ export default function SettingsPage() {
       const response = await fetch('/api/auth/password', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify(passwordData),
       })
 
@@ -173,24 +183,33 @@ export default function SettingsPage() {
                     name="fullName"
                     value={formData.fullName}
                     onChange={handleAccountChange}
+                    placeholder="Enter your full name"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">Email</label>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Email
+                    <span className="ml-2 text-xs text-foreground/40">(Read-only)</span>
+                  </label>
                   <Input
                     type="email"
                     name="email"
                     value={formData.email}
-                    onChange={handleAccountChange}
+                    disabled
+                    className="bg-secondary/50 cursor-not-allowed"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Organization</label>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Organization
+                  <span className="ml-2 text-xs text-foreground/40">(Read-only)</span>
+                </label>
                 <Input
                   name="organization"
                   value={formData.organization}
-                  onChange={handleAccountChange}
+                  disabled
+                  className="bg-secondary/50 cursor-not-allowed"
                 />
               </div>
               <div className="pt-4">

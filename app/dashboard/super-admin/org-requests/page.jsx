@@ -99,6 +99,7 @@ export default function OrgRequestsPage() {
       const res = await fetch(`/api/admin/org-requests/${selectedRequest._id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           action,
           adminNotes: adminNotes || undefined,

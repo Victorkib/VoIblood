@@ -166,6 +166,7 @@ export default function TeamPage() {
       const res = await fetch(`/api/admin/users/${selectedMember.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify(editForm),
       })
       
@@ -196,6 +197,7 @@ export default function TeamPage() {
       const res = await fetch('/api/admin/users/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           ...inviteForm,
           organizationId: user.organizationId,
@@ -227,6 +229,7 @@ export default function TeamPage() {
       const res = await fetch('/api/admin/users/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           ...createForm,
           organizationId: user.organizationId,

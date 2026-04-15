@@ -93,6 +93,7 @@ export default function PendingApprovalsPage() {
       const res = await fetch(`/api/admin/users/${selectedRequest.user.id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           role: selectedRole,
           reviewNotes,
@@ -128,6 +129,7 @@ export default function PendingApprovalsPage() {
       const res = await fetch(`/api/admin/users/${selectedRequest.user.id}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           organizationId: user.organizationId,
           reviewNotes,

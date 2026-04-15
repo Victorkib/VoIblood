@@ -86,7 +86,8 @@ export default function OrganizationsPage() {
 
     try {
       const response = await fetch(`/api/organizations/${org._id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
       })
 
       if (!response.ok) {

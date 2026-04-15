@@ -41,6 +41,7 @@ function AuthCallbackComponent() {
           const cookieRes = await fetch('/api/auth/set-cookie', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', // CRITICAL: Send cookies (auth-session)
             body: JSON.stringify({ cookieValue }),
           })
           

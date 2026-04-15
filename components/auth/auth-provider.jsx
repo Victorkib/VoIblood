@@ -170,14 +170,30 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
+      // Call logout API to clear server session and cookie
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+      
+      // Sign out from Supabase
       if (supabase && typeof supabase?.auth?.signOut === 'function') {
         await supabase.auth.signOut()
       }
+      
+      // Clear ALL client-side storage
+      localStorage.clear()
+      sessionStorage.clear()
+      
+      // Clear user state
+      setUser(null)
+      
+      // Redirect to landing page
+      window.location.href = '/'
     } catch (error) {
       console.error('Logout error:', error)
-    } finally {
+      // Still clear storage and redirect even if logout fails
+      localStorage.clear()
+      sessionStorage.clear()
       setUser(null)
+      window.location.href = '/'
     }
   }, [supabase])
 

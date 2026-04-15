@@ -73,6 +73,7 @@ export default function OrganizationDetailsPage() {
     try {
       const res = await fetch(`/api/admin/organizations/${organization.id}/enter`, {
         method: 'POST',
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
       })
       
       const data = await res.json()
@@ -101,6 +102,7 @@ export default function OrganizationDetailsPage() {
     try {
       const res = await fetch(`/api/admin/organizations/${organization.id}/enter`, {
         method: 'DELETE',
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
       })
       
       const data = await res.json()

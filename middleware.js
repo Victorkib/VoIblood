@@ -15,6 +15,7 @@ import { NextResponse } from 'next/server'
 
 // Routes that don't require authentication
 const publicRoutes = [
+  '/', // Landing page - always accessible
   '/auth/login',
   '/auth/signup',
   '/auth/callback',

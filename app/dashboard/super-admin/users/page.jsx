@@ -215,6 +215,7 @@ export default function UsersPage() {
       const res = await fetch(`/api/admin/users/${selectedUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify(editForm),
       })
       
@@ -275,10 +276,11 @@ export default function UsersPage() {
     setActionError(null)
 
     try {
-      const promises = selectedUsers.map(userId => 
+      const promises = selectedUsers.map(userId =>
         fetch(`/api/admin/users/${userId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // CRITICAL: Send cookies (auth-session)
           body: JSON.stringify({ accountStatus: 'suspended' }),
         })
       )
@@ -310,10 +312,11 @@ export default function UsersPage() {
     setActionError(null)
 
     try {
-      const promises = selectedUsers.map(userId => 
+      const promises = selectedUsers.map(userId =>
         fetch(`/api/admin/users/${userId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // CRITICAL: Send cookies (auth-session)
           body: JSON.stringify({ accountStatus: 'active' }),
         })
       )
@@ -341,10 +344,11 @@ export default function UsersPage() {
     setActionError(null)
 
     try {
-      const promises = selectedUsers.map(userId => 
+      const promises = selectedUsers.map(userId =>
         fetch(`/api/admin/users/${userId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // CRITICAL: Send cookies (auth-session)
           body: JSON.stringify({ organizationId }),
         })
       )
@@ -376,6 +380,7 @@ export default function UsersPage() {
       const res = await fetch('/api/admin/users/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify(createForm),
       })
 
@@ -408,6 +413,7 @@ export default function UsersPage() {
       const res = await fetch('/api/admin/users/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify(inviteForm),
       })
 

@@ -110,6 +110,7 @@ export default function InvitationsPage() {
       const response = await fetch('/api/invitations/resend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({ invitationId: selectedInvitation._id }),
       })
       
@@ -138,6 +139,7 @@ export default function InvitationsPage() {
       const response = await fetch('/api/invitations/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({ invitationId: selectedInvitation._id }),
       })
       

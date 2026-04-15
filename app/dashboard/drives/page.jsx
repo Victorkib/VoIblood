@@ -126,6 +126,7 @@ export default function DrivesPage() {
       const res = await fetch('/api/admin/drives', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify(formData),
       })
 
@@ -169,6 +170,7 @@ export default function DrivesPage() {
       const res = await fetch(`/api/admin/drives/${selectedDrive.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({ action: actionMode }),
       })
 
@@ -209,6 +211,7 @@ export default function DrivesPage() {
     try {
       const res = await fetch(`/api/admin/drives/${selectedDrive.id}`, {
         method: 'DELETE',
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
       })
 
       const data = await res.json()

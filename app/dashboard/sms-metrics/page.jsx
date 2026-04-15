@@ -79,6 +79,7 @@ export default function SMSMetricsPage() {
       const res = await fetch('/api/admin/sms-metrics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({ action: 'reset' }),
       })
 

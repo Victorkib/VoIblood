@@ -1,6 +1,11 @@
 /**
  * POST /api/auth/logout
  * Handle user logout
+ *
+ * Clears:
+ * - auth-session cookie
+ * - signup-intent cookie (if exists)
+ * - Supabase session
  */
 
 import { NextResponse } from 'next/server'
@@ -10,7 +15,7 @@ export async function POST(request) {
   try {
     // Get the access token from cookie
     const sessionCookie = request.cookies.get('auth-session')
-    
+
     // Create Supabase client
     const supabase = createServerClient()
 
@@ -26,10 +31,23 @@ export async function POST(request) {
       }
     }
 
-    // Clear the auth cookie
+    // Create response
     const response = NextResponse.json({ success: true })
+
+    // Clear the auth cookie
     response.cookies.set({
       name: 'auth-session',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 0,
+      path: '/',
+    })
+
+    // Clear signup-intent cookie (if exists)
+    response.cookies.set({
+      name: 'signup-intent',
       value: '',
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

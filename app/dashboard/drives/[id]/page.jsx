@@ -198,6 +198,7 @@ export default function DriveDetailsPage() {
       const res = await fetch(`/api/admin/drives/${params.id}/registrations/${registrationId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({ status: newStatus, sendNotification: true }),
       })
 
@@ -224,6 +225,7 @@ export default function DriveDetailsPage() {
     try {
       const res = await fetch(`/api/admin/drives/${params.id}/registrations/bulk-checkin`, {
         method: 'POST',
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
       })
 
       if (res.ok) {
@@ -263,6 +265,7 @@ export default function DriveDetailsPage() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // CRITICAL: Send cookies (auth-session)
           body: JSON.stringify({
             ...recordDonationForm,
             sendNotification: true,
@@ -312,6 +315,7 @@ export default function DriveDetailsPage() {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // CRITICAL: Send cookies (auth-session)
           body: JSON.stringify({
             subject: messageSubject,
             message: messageBody,
@@ -347,6 +351,7 @@ export default function DriveDetailsPage() {
       const res = await fetch(`/api/admin/drives/${params.id}/registrations/${selectedDonor.id}/notes`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({ notes: donorNotes }),
       })
 

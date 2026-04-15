@@ -18,7 +18,8 @@ export default function AdminSetupPage() {
     try {
       const response = await fetch('/api/setup/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
       })
 
       if (!response.ok) {

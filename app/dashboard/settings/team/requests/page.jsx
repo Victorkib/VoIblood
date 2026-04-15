@@ -99,6 +99,7 @@ export default function JoinRequestsPage() {
       const res = await fetch(`/api/organization-requests/${selectedRequest._id}/actions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
           action,
           adminNotes: adminNotes || undefined,
