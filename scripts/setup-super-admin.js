@@ -81,12 +81,12 @@ async function setupSuperAdmin() {
 
     // Find or update super admin
     console.log('\n📧 Setting up super admin:', adminEmail);
-    
+
     let admin = await User.findOne({ email: adminEmail });
 
     if (admin) {
       console.log('✅ Found existing user');
-      
+
       if (admin.role === 'super_admin') {
         console.log('ℹ️  User is already super_admin');
       } else {
@@ -98,9 +98,12 @@ async function setupSuperAdmin() {
       }
     } else {
       console.log('🆕 Creating new super_admin user');
-      
+
+      // NOTE: supabaseId is intentionally left null/undefined
+      // It will be set when the user logs in via Supabase (Google OAuth, email/password, etc.)
+      // This prevents duplicate key errors when the real OAuth account tries to login
       admin = await User.create({
-        supabaseId: `admin_${Date.now()}`,
+        supabaseId: null, // Will be set on first real login
         email: adminEmail,
         fullName: 'Qin Alexander',
         role: 'super_admin',
@@ -108,7 +111,7 @@ async function setupSuperAdmin() {
         emailVerified: true,
         providers: [],
       });
-      
+
       console.log('✅ Super admin user created');
     }
 

@@ -75,28 +75,51 @@ export async function GET(request) {
 
       console.log('[Session] Creating MongoDB user from Supabase:', supabaseUser.email)
 
-      // Check if user has organization info in metadata
-      const hasOrganization = !!supabaseUser.user_metadata?.organization_name
+      // Check if user exists with same email but different/null supabaseId
+      // (e.g., user created by setup-super-admin script)
+      let existingUser = await User.findOne({ email: supabaseUser.email.toLowerCase(), isActive: true })
 
-      // Create MongoDB user from Supabase data
-      user = await User.create({
-        supabaseId: supabaseUser.id,
-        email: supabaseUser.email,
-        fullName: supabaseUser.user_metadata?.full_name || supabaseUser.email.split('@')[0],
-        role: 'pending',
-        accountStatus: hasOrganization ? 'active' : 'pending_approval',
-        emailVerified: supabaseUser.email_confirmed_at ? true : false,
-        avatarUrl: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
-        organizationName: supabaseUser.user_metadata?.organization_name || null,
-        organizationId: null,
-        providers: supabaseUser.identities?.map(identity => ({
-          provider: identity.provider,
-          providerId: identity.id,
-        })) || [{ provider: 'email', providerId: supabaseUser.id }],
-        lastLoginAt: new Date(supabaseUser.last_sign_in_at),
-      })
+      if (existingUser) {
+        // Update existing user with OAuth supabaseId
+        console.log('[Session] Found existing user by email, linking OAuth account:', supabaseUser.email)
+        existingUser.supabaseId = supabaseUser.id
+        existingUser.emailVerified = supabaseUser.email_confirmed_at ? true : existingUser.emailVerified
+        existingUser.fullName = supabaseUser.user_metadata?.full_name || existingUser.fullName
+        existingUser.avatarUrl = supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture || existingUser.avatarUrl
+        existingUser.lastLoginAt = new Date(supabaseUser.last_sign_in_at)
 
-      console.log('[Session] MongoDB user created:', user.email, '- status:', user.accountStatus)
+        // Update providers array
+        const provider = supabaseUser.identities?.[0]?.provider || 'google'
+        if (!existingUser.providers.some(p => p.provider === provider)) {
+          existingUser.providers.push({ provider, providerId: supabaseUser.id })
+        }
+
+        user = await existingUser.save()
+        console.log('[Session] Existing user updated with OAuth account:', user.email, '- role:', user.role)
+      } else {
+        // No existing user, check if user has organization info in metadata
+        const hasOrganization = !!supabaseUser.user_metadata?.organization_name
+
+        // Create new user from Supabase data
+        user = await User.create({
+          supabaseId: supabaseUser.id,
+          email: supabaseUser.email,
+          fullName: supabaseUser.user_metadata?.full_name || supabaseUser.email.split('@')[0],
+          role: 'pending',
+          accountStatus: hasOrganization ? 'active' : 'pending_approval',
+          emailVerified: supabaseUser.email_confirmed_at ? true : false,
+          avatarUrl: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
+          organizationName: supabaseUser.user_metadata?.organization_name || null,
+          organizationId: null,
+          providers: supabaseUser.identities?.map(identity => ({
+            provider: identity.provider,
+            providerId: identity.id,
+          })) || [{ provider: 'email', providerId: supabaseUser.id }],
+          lastLoginAt: new Date(supabaseUser.last_sign_in_at),
+        })
+
+        console.log('[Session] New MongoDB user created:', user.email, '- status:', user.accountStatus)
+      }
 
       // Update OrganizationRequest: change status from 'pending_email_verification' to 'pending'
       try {

@@ -81,34 +81,56 @@ export async function GET(request) {
     if (!mongoUser) {
       console.log('[Callback] Creating new MongoDB user for:', user.email)
 
-      // Initialize user variables
-      let organizationId = null
-      let organizationName = null
-      let role = 'pending'
-      let accountStatus = 'pending_approval'
-      let invitedBy = null
+      // Check if user exists with same email but different/null supabaseId
+      // (e.g., user created by setup-super-admin script)
+      let existingUser = await User.findOne({ email: user.email.toLowerCase(), isActive: true })
 
-      // Create user in MongoDB
-      console.log('[Callback] Creating MongoDB user with status:', accountStatus)
-      mongoUser = await User.create({
-        supabaseId: user.id,
-        email: user.email,
-        fullName: fullUser.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
-        role: role,
-        organizationId: organizationId,
-        organizationName: organizationName,
-        emailVerified: true, // Email is confirmed at this point
-        accountStatus: accountStatus,
-        invitedBy: invitedBy,
-        bio: '',
-        title: '',
-        providers: user.app_metadata?.providers?.map(p => ({
-          provider: p,
-          providerId: user.id,
-        })) || [],
-      })
+      if (existingUser) {
+        // Update existing user with OAuth supabaseId
+        console.log('[Callback] Found existing user by email, linking OAuth account:', user.email)
+        existingUser.supabaseId = user.id
+        existingUser.emailVerified = true
+        existingUser.fullName = fullUser.user_metadata?.full_name || existingUser.fullName
+        existingUser.avatarUrl = fullUser.user_metadata?.avatar_url || fullUser.user_metadata?.picture || existingUser.avatarUrl
 
-      console.log('[Callback] MongoDB user created:', mongoUser._id)
+        // Update providers array
+        const provider = user.app_metadata?.provider || 'email'
+        if (!existingUser.providers.some(p => p.provider === provider)) {
+          existingUser.providers.push({ provider, providerId: user.id })
+        }
+
+        mongoUser = await existingUser.save()
+        console.log('[Callback] Existing user updated with OAuth account:', mongoUser.email, '- role:', mongoUser.role)
+      } else {
+        // Initialize user variables
+        let organizationId = null
+        let organizationName = null
+        let role = 'pending'
+        let accountStatus = 'pending_approval'
+        let invitedBy = null
+
+        // Create user in MongoDB
+        console.log('[Callback] Creating MongoDB user with status:', accountStatus)
+        mongoUser = await User.create({
+          supabaseId: user.id,
+          email: user.email,
+          fullName: fullUser.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+          role: role,
+          organizationId: organizationId,
+          organizationName: organizationName,
+          emailVerified: true, // Email is confirmed at this point
+          accountStatus: accountStatus,
+          invitedBy: invitedBy,
+          bio: '',
+          title: '',
+          providers: user.app_metadata?.providers?.map(p => ({
+            provider: p,
+            providerId: user.id,
+          })) || [],
+        })
+
+        console.log('[Callback] MongoDB user created:', mongoUser._id)
+      }
 
       // Update OrganizationRequest: change status from 'pending_email_verification' to 'pending'
       // and link the userId
