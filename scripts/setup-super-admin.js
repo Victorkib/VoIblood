@@ -87,6 +87,13 @@ async function setupSuperAdmin() {
     if (admin) {
       console.log('✅ Found existing user');
 
+      // Clear any fake supabaseId from old setup runs (e.g., "admin_1713456789000")
+      // The real supabaseId will be set when the user actually logs in via Supabase
+      if (admin.supabaseId && admin.supabaseId.startsWith('admin_')) {
+        console.log('ℹ️  Clearing fake supabaseId (will be set on first real login)');
+        admin.supabaseId = null;
+      }
+
       if (admin.role === 'super_admin') {
         console.log('ℹ️  User is already super_admin');
       } else {
