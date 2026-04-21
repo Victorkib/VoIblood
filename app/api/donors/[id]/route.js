@@ -40,6 +40,13 @@ export async function GET(request, { params }) {
       )
     }
 
+    // Calculate nextEligibleDate if missing (Option 1: Primary Solution)
+    if (!donor.nextEligibleDate && donor.lastDonationDate) {
+      const nextEligible = new Date(donor.lastDonationDate)
+      nextEligible.setDate(nextEligible.getDate() + 56)
+      donor.nextEligibleDate = nextEligible
+    }
+
     // Check org access
     if (user.role !== 'super_admin' && donor.organizationId?.toString() !== user.organizationId) {
       return NextResponse.json(

@@ -119,6 +119,14 @@ export default function DonorDetailsPage() {
     ? new Date().getFullYear() - new Date(donor.dateOfBirth).getFullYear()
     : null
 
+  // Calculate next eligible date as backup (Option 2: Backup Solution)
+  const calculateNextEligible = (lastDonationDate) => {
+    if (!lastDonationDate) return 'N/A'
+    const nextEligible = new Date(lastDonationDate)
+    nextEligible.setDate(nextEligible.getDate() + 56)
+    return nextEligible.toLocaleDateString()
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -236,7 +244,7 @@ export default function DonorDetailsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-lg font-bold">
-              {donor.nextEligibleDate ? new Date(donor.nextEligibleDate).toLocaleDateString() : 'N/A'}
+              {donor.nextEligibleDate ? new Date(donor.nextEligibleDate).toLocaleDateString() : calculateNextEligible(donor.lastDonationDate)}
             </div>
           </CardContent>
         </Card>
