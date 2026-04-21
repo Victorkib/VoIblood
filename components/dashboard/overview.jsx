@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Package, Users, AlertCircle, TrendingUp } from 'lucide-react'
 import { useAuth } from '@/components/auth/auth-provider'
@@ -269,13 +270,13 @@ export function DashboardOverview() {
             { label: 'Process Request', href: '/dashboard/requests' },
             { label: 'View Reports', href: '/dashboard/reports' },
           ].map((action, idx) => (
-            <a
+            <Link
               key={idx}
               href={action.href}
               className="p-4 rounded-lg border border-border hover:border-primary/50 hover:bg-primary/5 transition text-center"
             >
               <p className="text-sm font-medium text-foreground">{action.label}</p>
-            </a>
+            </Link>
           ))}
         </div>
       </Card>
