@@ -12,6 +12,7 @@ export function DashboardOverview() {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [lastFetchTime, setLastFetchTime] = useState(0)
   const { user, isLoading: authLoading } = useAuth()
 
   useEffect(() => {
@@ -22,6 +23,13 @@ export function DashboardOverview() {
 
     const fetchDashboardStats = async () => {
       try {
+        // Prevent redundant fetches within 5 seconds (prevents rapid refetching on tab switch)
+        const now = Date.now()
+        if (lastFetchTime && now - lastFetchTime < 5000) {
+          return
+        }
+        setLastFetchTime(now)
+
         console.log('[Dashboard] Fetching stats for user:', user?.email, 'org:', user?.organizationId)
         
         // Handle super admin viewing organization context
@@ -97,8 +105,11 @@ export function DashboardOverview() {
       }
     }
 
-    fetchDashboardStats()
-  }, [user, authLoading])
+    // Only fetch if we have user data
+    if (user?.email && user?.organizationId) {
+      fetchDashboardStats()
+    }
+  }, [user?.email, user?.organizationId, user?.role, authLoading, lastFetchTime])
 
   // Show loading while auth is initializing or data is loading
   if (authLoading || loading) {

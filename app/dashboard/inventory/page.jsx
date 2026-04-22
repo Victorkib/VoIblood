@@ -17,6 +17,7 @@ export default function InventoryPage() {
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [lastFetchTime, setLastFetchTime] = useState(0)
   const { user, isLoading: authLoading } = useAuth()
 
   useEffect(() => {
@@ -27,6 +28,14 @@ export default function InventoryPage() {
 
     const fetchInventory = async () => {
       try {
+        // Prevent redundant fetches within 3 seconds (prevents unnecessary refetches on tab switch)
+        const now = Date.now()
+        if (lastFetchTime && now - lastFetchTime < 3000) {
+          setLoading(false)
+          return
+        }
+        setLastFetchTime(now)
+
         if (!user) {
           setError('User not authenticated')
           setLoading(false)
@@ -106,7 +115,7 @@ export default function InventoryPage() {
     }, 300)
 
     return () => clearTimeout(debounceTimer)
-  }, [user, authLoading, search])
+  }, [user?.email, user?.organizationId, user?.role, authLoading, search, lastFetchTime])
 
   useEffect(() => {
     const fetchStats = async () => {

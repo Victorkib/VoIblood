@@ -136,6 +136,7 @@ export default function DriveDetailsPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [actionSuccess, setActionSuccess] = useState(null)
   const [actionError, setActionError] = useState(null)
+  const [lastFetchTime, setLastFetchTime] = useState(0)
   
   // Email/SMS Modal
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false)
@@ -167,7 +168,11 @@ export default function DriveDetailsPage() {
       router.push('/dashboard')
       return
     }
-    fetchDriveDetails()
+    
+    // Only fetch on initial load, not on every dependency change
+    if (params.id && !drive) {
+      fetchDriveDetails()
+    }
   }, [isAuthenticated, user, params.id])
 
   const fetchDriveDetails = async () => {
@@ -280,22 +285,44 @@ export default function DriveDetailsPage() {
     setRecordDonationLoading(true)
     setActionError(null)
     try {
-      const res = await fetch(
-        `/api/admin/drives/${params.id}/registrations/${selectedDonor.id}/record-donation`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include', // CRITICAL: Send cookies (auth-session)
-          body: JSON.stringify({
-            ...recordDonationForm,
-            sendNotification: true,
-          }),
-        }
-      )
+      // Calculate expiry date (35 days from now for whole blood)
+      const collectionDate = new Date()
+      const expiryDate = new Date(collectionDate)
+      expiryDate.setDate(expiryDate.getDate() + 35)
+
+      // Use the unified /api/inventory endpoint so all blood donations go to same storage
+      const res = await fetch('/api/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // CRITICAL: Send cookies (auth-session)
+        body: JSON.stringify({
+          organizationId: drive.organizationId._id || drive.organizationId,
+          bloodType: selectedDonor.bloodType,
+          donorId: selectedDonor.id,
+          donorName: selectedDonor.fullName,
+          donorEmail: selectedDonor.email,
+          collectionDate: collectionDate.toISOString(),
+          expiryDate: expiryDate.toISOString(),
+          volume: recordDonationForm.volume,
+          component: recordDonationForm.component,
+          technician: recordDonationForm.technician,
+          notes: recordDonationForm.notes,
+          driveId: drive._id,
+          driveName: drive.name,
+        }),
+      })
 
       const data = await res.json()
 
       if (res.ok) {
+        // Update donor status to completed via the drives endpoint
+        await fetch(`/api/admin/drives/${params.id}/registrations/${selectedDonor.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ status: 'completed', sendNotification: true }),
+        })
+
         setActionSuccess(`✅ Donation recorded for ${selectedDonor.fullName}! Unit ID: ${data.data.unitId}`)
         setIsRecordDonationOpen(false)
         setRecordDonationForm({
