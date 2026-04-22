@@ -320,8 +320,31 @@ export default function DrivesPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-border bg-secondary/5">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Name</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Date</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Location</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Registrations</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Status</th>
+                    <th className="px-6 py-3 text-right text-sm font-semibold text-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {[1, 2, 3, 4, 5].map((idx) => (
+                    <tr key={idx} className="hover:bg-secondary/5 transition">
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-32 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-36 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-6 bg-gray-200 rounded w-16 animate-pulse"></div></td>
+                      <td className="px-6 py-4 text-right"><div className="h-8 bg-gray-200 rounded w-10 ml-auto animate-pulse"></div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : error ? (
             <div className="text-center py-12 text-red-600">{error}</div>

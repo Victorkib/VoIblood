@@ -124,8 +124,52 @@ export default function ExpiryPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-3xl font-bold text-foreground">Expiry Monitoring</h1>
-        <Card className="p-6">
-          <p className="text-foreground/60">Loading expiry data...</p>
+        <p className="text-foreground/60">Track and manage blood units approaching expiration</p>
+
+        {/* Stats Cards Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map((idx) => (
+            <Card key={idx} className="p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-200 rounded w-32 mb-3 animate-pulse"></div>
+                  <div className="h-8 bg-gray-300 rounded w-16 animate-pulse"></div>
+                </div>
+                <div className="w-8 h-8 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </Card>
+          ))}
+        </div>
+
+        {/* Table Skeleton */}
+        <Card className="overflow-hidden">
+          <div className="border-b border-border px-6 py-4">
+            <div className="h-5 bg-gray-200 rounded w-40 animate-pulse"></div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-border bg-destructive/5">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Unit ID</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Blood Type</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Expiry Date</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Days Expired</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {[1, 2, 3, 4, 5].map((idx) => (
+                  <tr key={idx} className="hover:bg-destructive/5 transition">
+                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24 animate-pulse"></div></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28 animate-pulse"></div></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div></td>
+                    <td className="px-6 py-4"><div className="h-8 bg-gray-200 rounded w-20 animate-pulse"></div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       </div>
     )

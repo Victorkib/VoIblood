@@ -179,9 +179,49 @@ export default function RequestsPage() {
       )}
 
       {loading && (
-        <Card className="overflow-hidden">
-          <div className="p-6 text-center text-foreground/60">Loading requests...</div>
-        </Card>
+        <>
+          {/* Summary Cards Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            {[1, 2, 3, 4].map((idx) => (
+              <Card key={idx} className="p-4">
+                <div className="h-4 bg-gray-200 rounded w-20 mb-3 animate-pulse"></div>
+                <div className="h-8 bg-gray-300 rounded w-16 animate-pulse"></div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Table Skeleton */}
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-border bg-secondary/5">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Request ID</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Hospital</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Blood Type</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Quantity</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Status</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Date</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {[1, 2, 3, 4, 5].map((idx) => (
+                    <tr key={idx} className="hover:bg-secondary/5 transition">
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-32 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-6 bg-gray-200 rounded w-24 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div></td>
+                      <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
       )}
 
       {!loading && !error && (

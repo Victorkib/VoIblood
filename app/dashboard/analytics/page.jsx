@@ -60,10 +60,62 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading analytics...</p>
+      <div className="p-6 space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex justify-between items-center">
+          <div className="flex-1">
+            <div className="h-8 bg-gray-200 rounded w-48 mb-3 animate-pulse"></div>
+            <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
+          </div>
+          <div className="w-32 h-10 bg-gray-200 rounded animate-pulse"></div>
+        </div>
+
+        {/* Overview Stats Skeleton */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map((idx) => (
+            <Card key={idx}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 bg-gray-200 rounded w-24 animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 bg-gray-300 rounded w-16 mb-2 animate-pulse"></div>
+                <div className="h-3 bg-gray-200 rounded w-32 animate-pulse"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Charts Skeleton */}
+        <div className="grid md:grid-cols-2 gap-6">
+          {[1, 2].map((idx) => (
+            <Card key={idx}>
+              <CardHeader>
+                <div className="h-6 bg-gray-200 rounded w-40 animate-pulse"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="h-48 bg-gray-200 rounded animate-pulse"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Bottom Section Skeleton */}
+        <div className="grid md:grid-cols-2 gap-6">
+          {[1, 2].map((idx) => (
+            <Card key={idx}>
+              <CardHeader>
+                <div className="h-6 bg-gray-200 rounded w-40 animate-pulse"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="h-4 bg-gray-200 rounded animate-pulse"></div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
     )
