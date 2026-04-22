@@ -256,9 +256,29 @@ export default function DriveDetailsPage() {
   }
 
   const handleRecordDonation = async () => {
-    if (!selectedDonor) return
+    if (!selectedDonor) {
+      setActionError('No donor selected')
+      return
+    }
+
+    // Validation checks
+    if (!recordDonationForm.volume || recordDonationForm.volume < 200 || recordDonationForm.volume > 500) {
+      setActionError('Volume must be between 200ml and 500ml')
+      return
+    }
+
+    if (!recordDonationForm.component) {
+      setActionError('Please select a blood component')
+      return
+    }
+
+    if (selectedDonor.status !== 'checked_in') {
+      setActionError('Donor must be checked in before recording donation')
+      return
+    }
 
     setRecordDonationLoading(true)
+    setActionError(null)
     try {
       const res = await fetch(
         `/api/admin/drives/${params.id}/registrations/${selectedDonor.id}/record-donation`,
@@ -278,13 +298,21 @@ export default function DriveDetailsPage() {
       if (res.ok) {
         setActionSuccess(`✅ Donation recorded for ${selectedDonor.fullName}! Unit ID: ${data.data.unitId}`)
         setIsRecordDonationOpen(false)
+        setRecordDonationForm({
+          volume: 450,
+          component: 'whole_blood',
+          technician: '',
+          notes: '',
+        })
         fetchDriveDetails()
         setTimeout(() => setActionSuccess(null), 5000)
       } else {
-        setActionError(data.error || 'Failed to record donation')
+        const errorMessage = data.error || data.message || 'Failed to record donation'
+        setActionError(errorMessage)
       }
     } catch (err) {
-      setActionError('Failed to record donation')
+      console.error('[Record Donation Error]', err)
+      setActionError('Network error: Unable to record donation. Please check your connection and try again.')
     } finally {
       setRecordDonationLoading(false)
     }
@@ -988,45 +1016,61 @@ export default function DriveDetailsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'confirmed')}
-                    disabled={selectedDonor.status !== 'registered'}
+                    disabled={selectedDonor.status !== 'registered' || actionLoading}
                     className="justify-start"
                     title={selectedDonor.status === 'registered' ? 'Mark as confirmed' : `Already ${selectedDonor.status}`}
                   >
-                    <UserCheck className="w-4 h-4 mr-2 text-green-600" />
-                    Confirm
+                    {actionLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin text-green-600" />
+                    ) : (
+                      <UserCheck className="w-4 h-4 mr-2 text-green-600" />
+                    )}
+                    {actionLoading ? 'Confirming...' : 'Confirm'}
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'checked_in')}
-                    disabled={!['registered', 'confirmed'].includes(selectedDonor.status)}
+                    disabled={!['registered', 'confirmed'].includes(selectedDonor.status) || actionLoading}
                     className="justify-start"
                     title={selectedDonor.status !== 'checked_in' && selectedDonor.status !== 'completed' ? 'Mark as checked in' : `Already ${selectedDonor.status}`}
                   >
-                    <Users className="w-4 h-4 mr-2 text-purple-600" />
-                    Check In
+                    {actionLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin text-purple-600" />
+                    ) : (
+                      <Users className="w-4 h-4 mr-2 text-purple-600" />
+                    )}
+                    {actionLoading ? 'Checking In...' : 'Check In'}
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'cancelled')}
-                    disabled={['cancelled', 'completed'].includes(selectedDonor.status)}
+                    disabled={['cancelled', 'completed'].includes(selectedDonor.status) || actionLoading}
                     className="justify-start"
                     title={selectedDonor.status !== 'cancelled' && selectedDonor.status !== 'completed' ? 'Cancel registration' : `Already ${selectedDonor.status}`}
                   >
-                    <XCircle className="w-4 h-4 mr-2 text-gray-600" />
-                    Cancel
+                    {actionLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin text-gray-600" />
+                    ) : (
+                      <XCircle className="w-4 h-4 mr-2 text-gray-600" />
+                    )}
+                    {actionLoading ? 'Cancelling...' : 'Cancel'}
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'no_show')}
-                    disabled={['no_show', 'completed'].includes(selectedDonor.status)}
+                    disabled={['no_show', 'completed'].includes(selectedDonor.status) || actionLoading}
                     className="justify-start"
                     title={selectedDonor.status !== 'no_show' && selectedDonor.status !== 'completed' ? 'Mark as no show' : `Already ${selectedDonor.status}`}
                   >
-                    <UserX className="w-4 h-4 mr-2 text-red-600" />
-                    No Show
+                    {actionLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin text-red-600" />
+                    ) : (
+                      <UserX className="w-4 h-4 mr-2 text-red-600" />
+                    )}
+                    {actionLoading ? 'Marking...' : 'No Show'}
                   </Button>
                 </div>
 
@@ -1245,14 +1289,29 @@ export default function DriveDetailsPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* Status Check */}
+            {selectedDonor && selectedDonor.status !== 'checked_in' && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-red-900">
+                    <p className="font-semibold">Cannot Record Donation</p>
+                    <p className="mt-1">Donor must be checked in first. Current status: <span className="font-semibold capitalize">{selectedDonor.status?.replace('_', ' ')}</span></p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Blood Component */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Blood Component</label>
+              <label className="text-sm font-medium">Blood Component <span className="text-red-600">*</span></label>
               <select
                 value={recordDonationForm.component}
                 onChange={(e) => setRecordDonationForm({ ...recordDonationForm, component: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                disabled={recordDonationLoading}
               >
+                <option value="">-- Select Component --</option>
                 <option value="whole_blood">Whole Blood</option>
                 <option value="rbc">Red Blood Cells</option>
                 <option value="plasma">Plasma</option>
@@ -1263,16 +1322,20 @@ export default function DriveDetailsPage() {
 
             {/* Volume */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Volume (ml)</label>
+              <label className="text-sm font-medium">Volume (ml) <span className="text-red-600">*</span></label>
               <Input
                 type="number"
                 value={recordDonationForm.volume}
-                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, volume: parseInt(e.target.value) || 450 })}
+                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, volume: parseInt(e.target.value) || 0 })}
                 placeholder="450"
                 min={200}
                 max={500}
+                disabled={recordDonationLoading}
               />
-              <p className="text-xs text-gray-500">Standard whole blood donation is 450ml</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">Standard whole blood donation is 450ml</p>
+                <p className="text-xs text-gray-500">Valid range: 200-500ml</p>
+              </div>
             </div>
 
             {/* Technician */}
@@ -1282,6 +1345,7 @@ export default function DriveDetailsPage() {
                 value={recordDonationForm.technician}
                 onChange={(e) => setRecordDonationForm({ ...recordDonationForm, technician: e.target.value })}
                 placeholder="Who collected this donation?"
+                disabled={recordDonationLoading}
               />
             </div>
 
@@ -1294,8 +1358,22 @@ export default function DriveDetailsPage() {
                 placeholder="Any additional notes about this donation..."
                 rows={3}
                 className="resize-none"
+                disabled={recordDonationLoading}
               />
             </div>
+
+            {/* Error Display */}
+            {actionError && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-red-900">
+                    <p className="font-semibold">Error</p>
+                    <p className="mt-1">{actionError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Info Box */}
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -1317,14 +1395,17 @@ export default function DriveDetailsPage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setIsRecordDonationOpen(false)}
+              onClick={() => {
+                setIsRecordDonationOpen(false)
+                setActionError(null)
+              }}
               disabled={recordDonationLoading}
             >
               Cancel
             </Button>
             <Button
               onClick={handleRecordDonation}
-              disabled={recordDonationLoading}
+              disabled={recordDonationLoading || selectedDonor?.status !== 'checked_in'}
               className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600"
             >
               {recordDonationLoading ? (

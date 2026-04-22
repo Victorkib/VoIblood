@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
-import { Package, Users, AlertCircle, TrendingUp } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Package, Users, AlertCircle, TrendingUp, Plus, Zap, ClipboardList, BarChart3, ArrowUp, ArrowDown, Heart } from 'lucide-react'
 import { useAuth } from '@/components/auth/auth-provider'
 
 export function DashboardOverview() {
+  const router = useRouter()
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -145,34 +147,58 @@ export function DashboardOverview() {
       label: 'Total Blood Units',
       value: stats.inventory.totalUnits.toLocaleString(),
       icon: Package,
-      color: 'text-secondary',
+      color: 'text-orange-600',
+      bgColor: 'bg-orange-50',
+      borderColor: 'border-orange-200',
+      trend: null,
     },
     {
       label: 'Active Donors',
       value: stats.donors.available.toLocaleString(),
       icon: Users,
-      color: 'text-accent',
+      color: 'text-green-600',
+      bgColor: 'bg-green-50',
+      borderColor: 'border-green-200',
+      trend: 'up',
     },
     {
       label: 'Expiring Soon',
       value: stats.inventory.alerts.expiring.toLocaleString(),
       icon: AlertCircle,
-      color: 'text-primary',
+      color: 'text-red-600',
+      bgColor: 'bg-red-50',
+      borderColor: 'border-red-200',
+      trend: stats.inventory.alerts.expiring > 5 ? 'up' : 'down',
     },
     {
       label: 'Pending Requests',
       value: stats.requests.pending.toLocaleString(),
       icon: TrendingUp,
-      color: 'text-accent',
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-50',
+      borderColor: 'border-blue-200',
+      trend: null,
     },
   ]
 
   const bloodTypeData = Object.entries(stats.inventory.byBloodType || {}).map(([type, count]) => ({
     type,
     units: count,
-  }))
+  })).sort((a, b) => b.units - a.units)
 
   const maxUnits = Math.max(...bloodTypeData.map((item) => item.units), 1)
+
+  // Blood type colors
+  const bloodTypeColors = {
+    'O+': 'bg-red-500',
+    'O-': 'bg-red-700',
+    'A+': 'bg-blue-500',
+    'A-': 'bg-blue-700',
+    'B+': 'bg-green-500',
+    'B-': 'bg-green-700',
+    'AB+': 'bg-purple-500',
+    'AB-': 'bg-purple-700',
+  }
 
   const formatTime = (date) => {
     const now = new Date()
@@ -192,14 +218,29 @@ export function DashboardOverview() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((stat, idx) => {
           const Icon = stat.icon
+          const TrendIcon = stat.trend === 'up' ? ArrowUp : stat.trend === 'down' ? ArrowDown : null
+          const trendColor = stat.trend === 'up' ? 'text-green-600' : stat.trend === 'down' ? 'text-red-600' : ''
+          
           return (
-            <Card key={idx} className="p-6">
+            <Card key={idx} className={`p-6 border-l-4 ${stat.borderColor} hover:shadow-lg transition-shadow`} style={{
+              borderLeftColor: stat.color.includes('orange') ? '#ea580c' : 
+                              stat.color.includes('green') ? '#16a34a' :
+                              stat.color.includes('red') ? '#dc2626' :
+                              stat.color.includes('blue') ? '#2563eb' : '#000'
+            }}>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="text-sm font-medium text-foreground/60">{stat.label}</p>
-                  <p className="mt-2 text-3xl font-bold text-foreground">{stat.value}</p>
+                  <div className="flex items-end gap-2 mt-2">
+                    <p className="text-3xl font-bold text-foreground">{stat.value}</p>
+                    {TrendIcon && (
+                      <div className={`${trendColor} mb-1 flex items-center`}>
+                        <TrendIcon className="w-4 h-4" />
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className={`p-3 rounded-lg bg-secondary/10 ${stat.color}`}>
+                <div className={`p-3 rounded-lg ${stat.bgColor} ${stat.color}`}>
                   <Icon className="w-6 h-6" />
                 </div>
               </div>
@@ -212,20 +253,32 @@ export function DashboardOverview() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Blood Type Distribution */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-foreground mb-6">Blood Type Distribution</h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Heart className="w-5 h-5 text-red-600" />
+              Blood Type Distribution
+            </h3>
+            <span className="text-xs font-medium text-foreground/60">{stats.inventory.totalUnits} total units</span>
+          </div>
           <div className="space-y-4">
             {bloodTypeData.length > 0 ? (
               bloodTypeData.map((item) => {
                 const percentage = maxUnits > 0 ? (item.units / maxUnits) * 100 : 0
+                const bgColor = bloodTypeColors[item.type] || 'bg-gray-400'
+                const isLow = percentage < 30
+                
                 return (
                   <div key={item.type}>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-foreground">{item.type}</span>
-                      <span className="text-sm text-foreground/60">{item.units} units</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-foreground">{item.type}</span>
+                        {isLow && <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full font-medium">Low</span>}
+                      </div>
+                      <span className="text-sm font-medium text-foreground/70">{item.units} units</span>
                     </div>
-                    <div className="h-2 rounded-full bg-secondary/20 overflow-hidden">
+                    <div className="h-3 rounded-full bg-gray-200 overflow-hidden">
                       <div
-                        className="h-full bg-primary rounded-full transition-all"
+                        className={`h-full ${bgColor} rounded-full transition-all duration-500`}
                         style={{ width: `${percentage}%` }}
                       />
                     </div>
@@ -233,7 +286,10 @@ export function DashboardOverview() {
                 )
               })
             ) : (
-              <p className="text-sm text-foreground/60">No blood units in stock</p>
+              <div className="text-center py-6">
+                <AlertCircle className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
+                <p className="text-sm text-foreground/60">No blood units in stock</p>
+              </div>
             )}
           </div>
         </Card>
@@ -262,22 +318,43 @@ export function DashboardOverview() {
 
       {/* Quick Actions */}
       <Card className="p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Register Donor', href: '/dashboard/donors/new' },
-            { label: 'Record Collection', href: '/dashboard/inventory/add' },
-            { label: 'Process Request', href: '/dashboard/requests' },
-            { label: 'View Reports', href: '/dashboard/reports' },
-          ].map((action, idx) => (
-            <Link
-              key={idx}
-              href={action.href}
-              className="p-4 rounded-lg border border-border hover:border-primary/50 hover:bg-primary/5 transition text-center"
-            >
-              <p className="text-sm font-medium text-foreground">{action.label}</p>
-            </Link>
-          ))}
+        <h3 className="text-lg font-semibold text-foreground mb-6">Quick Actions</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Button
+            variant="outline"
+            onClick={() => router.push('/dashboard/donors/new')}
+            className="h-auto flex flex-col items-center justify-center p-6 gap-3 hover:bg-primary/5 hover:border-primary/50"
+          >
+            <Plus className="w-6 h-6 text-blue-600" />
+            <span className="text-sm font-medium text-foreground">Register Donor</span>
+          </Button>
+          
+          <Button
+            variant="outline"
+            onClick={() => router.push('/dashboard/inventory')}
+            className="h-auto flex flex-col items-center justify-center p-6 gap-3 hover:bg-primary/5 hover:border-primary/50"
+          >
+            <Zap className="w-6 h-6 text-orange-600" />
+            <span className="text-sm font-medium text-foreground">Record Collection</span>
+          </Button>
+          
+          <Button
+            variant="outline"
+            onClick={() => router.push('/dashboard/requests')}
+            className="h-auto flex flex-col items-center justify-center p-6 gap-3 hover:bg-primary/5 hover:border-primary/50"
+          >
+            <ClipboardList className="w-6 h-6 text-green-600" />
+            <span className="text-sm font-medium text-foreground">Process Request</span>
+          </Button>
+          
+          <Button
+            variant="outline"
+            onClick={() => router.push('/dashboard/reports')}
+            className="h-auto flex flex-col items-center justify-center p-6 gap-3 hover:bg-primary/5 hover:border-primary/50"
+          >
+            <BarChart3 className="w-6 h-6 text-purple-600" />
+            <span className="text-sm font-medium text-foreground">View Reports</span>
+          </Button>
         </div>
       </Card>
     </div>
