@@ -577,9 +577,20 @@ export default function RegisterPage() {
                           type="button"
                           variant="outline"
                           onClick={handleSendOTP}
-                          disabled={!formData.phone || otpSent || verified}
+                          disabled={!formData.phone || otpSent || verified || actionLoading}
                         >
-                          {verified ? 'Verified ✓' : otpSent ? 'Sent ✓' : 'Send OTP'}
+                          {actionLoading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Sending...
+                            </>
+                          ) : verified ? (
+                            <>Verified ✓</>
+                          ) : otpSent ? (
+                            <>Sent ✓</>
+                          ) : (
+                            'Send OTP'
+                          )}
                         </Button>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
@@ -602,9 +613,16 @@ export default function RegisterPage() {
                           type="button"
                           variant="outline"
                           onClick={handleVerifyOTP}
-                          disabled={!otp}
+                          disabled={!otp || actionLoading}
                         >
-                          Verify
+                          {actionLoading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Verifying...
+                            </>
+                          ) : (
+                            'Verify'
+                          )}
                         </Button>
                       </div>
 
@@ -630,13 +648,22 @@ export default function RegisterPage() {
                             size="sm"
                             onClick={handleResendOTP}
                             className="text-xs p-0 h-auto"
-                            disabled={otpAttempts >= maxOtpAttempts}
+                            disabled={otpAttempts >= maxOtpAttempts || actionLoading}
                           >
-                            Resend OTP
-                            {otpAttempts > 0 && (
-                              <span className="ml-1 text-gray-500">
-                                ({otpAttempts}/{maxOtpAttempts})
-                              </span>
+                            {actionLoading ? (
+                              <>
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin inline" />
+                                Resending...
+                              </>
+                            ) : (
+                              <>
+                                Resend OTP
+                                {otpAttempts > 0 && (
+                                  <span className="ml-1 text-gray-500">
+                                    ({otpAttempts}/{maxOtpAttempts})
+                                  </span>
+                                )}
+                              </>
                             )}
                           </Button>
                         )}

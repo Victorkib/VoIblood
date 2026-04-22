@@ -115,13 +115,68 @@ export function DashboardOverview() {
   if (authLoading || loading) {
     return (
       <div className="space-y-8">
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-primary mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading your dashboard...</p>
-            <p className="text-sm text-gray-500 mt-2">Fetching organization data</p>
-          </div>
+        {/* Stats Grid Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map((idx) => (
+            <Card key={idx} className="p-6 border-l-4 border-gray-200">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="h-4 bg-gray-200 rounded w-24 mb-3 animate-pulse"></div>
+                  <div className="h-8 bg-gray-300 rounded w-16 animate-pulse"></div>
+                </div>
+                <div className="w-10 h-10 bg-gray-200 rounded-lg animate-pulse"></div>
+              </div>
+            </Card>
+          ))}
         </div>
+
+        {/* Charts Section Skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Blood Type Distribution Skeleton */}
+          <Card className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="h-6 bg-gray-200 rounded w-40 animate-pulse"></div>
+              <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
+            </div>
+            <div className="space-y-4">
+              {[1, 2, 3, 4].map((idx) => (
+                <div key={idx}>
+                  <div className="flex justify-between mb-2">
+                    <div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div>
+                    <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
+                  </div>
+                  <div className="h-3 bg-gray-200 rounded-full animate-pulse"></div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Recent Activity Skeleton */}
+          <Card className="p-6">
+            <div className="h-6 bg-gray-200 rounded w-40 mb-6 animate-pulse"></div>
+            <div className="space-y-4">
+              {[1, 2, 3].map((idx) => (
+                <div key={idx} className="flex gap-4 pb-4 border-b border-gray-200 last:border-0">
+                  <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 flex-shrink-0 animate-pulse"></div>
+                  <div className="flex-1">
+                    <div className="h-4 bg-gray-200 rounded w-32 mb-2 animate-pulse"></div>
+                    <div className="h-3 bg-gray-200 rounded w-24 animate-pulse"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        {/* Quick Actions Skeleton */}
+        <Card className="p-6">
+          <div className="h-6 bg-gray-200 rounded w-40 mb-6 animate-pulse"></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((idx) => (
+              <div key={idx} className="h-24 bg-gray-200 rounded-lg animate-pulse"></div>
+            ))}
+          </div>
+        </Card>
       </div>
     )
   }
