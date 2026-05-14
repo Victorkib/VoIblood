@@ -9,6 +9,10 @@ import Donor from '@/lib/models/Donor'
 import BloodInventory from '@/lib/models/BloodInventory'
 import Request from '@/lib/models/Request'
 import Organization from '@/lib/models/Organization'
+import DonationDrive from '@/lib/models/DonationDrive'
+
+/** Donor lifecycle statuses that count as an active pool member (matches Donor model). */
+const ACTIVE_DONOR_STATUSES = ['registered', 'confirmed', 'checked_in', 'completed']
 
 export async function GET(request) {
   try {
@@ -35,17 +39,26 @@ export async function GET(request) {
       )
     }
 
-    // Total donors
-    const totalDonors = await Donor.countDocuments({
-      organizationId,
-      isActive: true,
-    })
+    // Same visibility as GET /api/donors: org-linked or registered on one of this org's drives
+    const orgDrives = await DonationDrive.find({ organizationId }).select('registrationToken')
+    const orgDriveTokens = orgDrives.map((d) => d.registrationToken).filter(Boolean)
+    const donorVisibility = {
+      $or: [{ organizationId }, { driveToken: { $in: orgDriveTokens } }],
+    }
 
-    // Available donors for donation
+    const totalDonors = await Donor.countDocuments(donorVisibility)
+
+    // "Active" = real Donor.status field (model has no isActive / donationStatus)
     const availableDonors = await Donor.countDocuments({
-      organizationId,
-      donationStatus: 'available',
-      isActive: true,
+      $and: [
+        donorVisibility,
+        {
+          $or: [
+            { status: { $in: ACTIVE_DONOR_STATUSES } },
+            { status: { $exists: false } },
+          ],
+        },
+      ],
     })
 
     // Total blood units in stock
@@ -95,10 +108,9 @@ export async function GET(request) {
       fulfilledDate: { $gte: monthStart },
     })
 
-    // Total donations this month
+    // Total donations this month (same donor visibility as list view)
     const donationsThisMonth = await Donor.countDocuments({
-      organizationId,
-      lastDonationDate: { $gte: monthStart },
+      $and: [donorVisibility, { lastDonationDate: { $gte: monthStart } }],
     })
 
     // Recent activities (last 10 requests)

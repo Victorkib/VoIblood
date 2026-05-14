@@ -105,8 +105,8 @@ export function DashboardOverview() {
       }
     }
 
-    // Only fetch if we have user data
-    if (user?.email && user?.organizationId) {
+    // Fetch when authenticated; org may be resolved inside fetch for super_admin (session / first org)
+    if (user?.email && (user?.organizationId || user?.role === 'super_admin')) {
       fetchDashboardStats()
     }
   }, [user?.email, user?.organizationId, user?.role, authLoading, lastFetchTime])
