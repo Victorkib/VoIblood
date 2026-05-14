@@ -25,6 +25,8 @@ const publicRoutes = [
   '/auth/invite',
   '/pending-approval',
   '/register',
+  '/rsvp',
+  '/r/',
   '/donor',
   '/sw.js',
   '/favicon.ico',
@@ -34,6 +36,7 @@ const publicRoutes = [
 const alwaysAllowed = [
   '/api/auth',
   '/api/register',
+  '/api/rsvp',
   '/api/donors/profile',
 ]
 

@@ -10,6 +10,7 @@ import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
 import DonationDrive from '@/lib/models/DonationDrive'
 import Donor from '@/lib/models/Donor'
 import { sendOTPViaSMS, isTwilioConfigured, isAfricasTalkingConfigured } from '@/lib/sms-service'
+import { resolveParticipantForAdmin } from '@/lib/drive-participant-helpers'
 
 export async function POST(request, { params }) {
   try {
@@ -51,13 +52,14 @@ export async function POST(request, { params }) {
       )
     }
 
-    // Find donor
-    const donor = await Donor.findById(registrationId)
-    if (!donor || donor.driveToken !== drive.registrationToken) {
-      return NextResponse.json(
-        { error: 'Donor not found' },
-        { status: 404 }
-      )
+    const participant = await resolveParticipantForAdmin(drive, registrationId)
+    if (!participant) {
+      return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
+    }
+
+    const donor = await Donor.findById(participant.donorId._id || participant.donorId)
+    if (!donor) {
+      return NextResponse.json({ error: 'Donor not found' }, { status: 404 })
     }
 
     const smsConfigured = isTwilioConfigured() || isAfricasTalkingConfigured()

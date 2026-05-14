@@ -19,6 +19,7 @@ import {
   Heart,
   Shield,
   Copy,
+  ExternalLink,
 } from 'lucide-react'
 
 export default function RegisterPage() {
@@ -27,7 +28,9 @@ export default function RegisterPage() {
   const [drive, setDrive] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [registrationStep, setRegistrationStep] = useState('landing') // landing, form, otp, success
+  const [registrationStep, setRegistrationStep] = useState('landing') // landing, form, otp, success, existing_donor
+  /** Rich 409 payload when email/phone already exists for this org (same drive). */
+  const [existingDonorHelp, setExistingDonorHelp] = useState(null)
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -343,9 +346,18 @@ export default function RegisterPage() {
         })
         
         setRegistrationStep('success')
+      } else if (res.status === 409 && data.duplicate) {
+        setExistingDonorHelp({
+          message: data.message || data.error,
+          rsvpUrl: data.rsvpUrl,
+          rsvpShortUrl: data.rsvpShortUrl,
+          profileUrl: data.profileUrl,
+          participantStatus: data.participantStatus,
+        })
+        setRegistrationStep('existing_donor')
       } else {
         setActionError(data.error || 'Registration failed')
-        
+
         // If token expired, redirect to OTP verification
         if (data.tokenExpired || data.otpRequired) {
           setTimeout(() => {
@@ -833,6 +845,80 @@ export default function RegisterPage() {
                   </Button>
                 </div>
               </form>
+            </div>
+          </Card>
+        )}
+
+        {registrationStep === 'existing_donor' && existingDonorHelp && drive && (
+          <Card className="overflow-hidden border-rose-200 shadow-xl">
+            <div className="h-2 w-full bg-gradient-to-r from-rose-600 via-red-500 to-amber-500" />
+            <div className="p-8 md:p-10">
+              <div className="flex flex-col items-center text-center max-w-lg mx-auto">
+                <div className="w-16 h-16 rounded-2xl bg-rose-100 flex items-center justify-center mb-5">
+                  <Heart className="w-9 h-9 text-rose-600" />
+                </div>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                  You&apos;re already one of our donors
+                </h2>
+                <p className="text-gray-600 leading-relaxed mb-6">{existingDonorHelp.message}</p>
+                {existingDonorHelp.participantStatus && (
+                  <p className="text-xs font-semibold uppercase tracking-wider text-rose-700/80 mb-6">
+                    Drive status on file:{' '}
+                    <span className="normal-case font-bold">{existingDonorHelp.participantStatus.replace(/_/g, ' ')}</span>
+                  </p>
+                )}
+                <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md">
+                  {(existingDonorHelp.rsvpShortUrl || existingDonorHelp.rsvpUrl) && (
+                    <Button
+                      className="flex-1 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 h-12 text-base shadow-lg"
+                      onClick={() =>
+                        window.open(existingDonorHelp.rsvpShortUrl || existingDonorHelp.rsvpUrl, '_blank')
+                      }
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Open your RSVP
+                    </Button>
+                  )}
+                  {existingDonorHelp.profileUrl && (
+                    <Button
+                      variant="outline"
+                      className="flex-1 h-12 text-base border-rose-200 hover:bg-rose-50"
+                      onClick={() => window.open(existingDonorHelp.profileUrl, '_blank')}
+                    >
+                      Donor profile
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-8 w-full max-w-md rounded-xl bg-slate-50 border border-slate-200 p-4 text-left">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">This drive</p>
+                  <p className="font-semibold text-gray-900">{drive.name}</p>
+                  <p className="text-sm text-gray-600 mt-1 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 shrink-0" />
+                    {new Date(drive.date).toLocaleDateString()}
+                    {drive.startTime && (
+                      <span className="text-gray-500">
+                        · {drive.startTime}
+                        {drive.endTime ? ` – ${drive.endTime}` : ''}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1 flex items-start gap-2">
+                    <MapPin className="w-4 h-4 shrink-0 mt-0.5" />
+                    {drive.location}
+                    {drive.city ? `, ${drive.city}` : ''}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  className="mt-6 text-gray-500"
+                  onClick={() => {
+                    setExistingDonorHelp(null)
+                    setRegistrationStep('landing')
+                  }}
+                >
+                  Back to drive info
+                </Button>
+              </div>
             </div>
           </Card>
         )}

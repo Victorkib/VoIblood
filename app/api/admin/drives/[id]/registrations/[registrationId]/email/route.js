@@ -9,7 +9,8 @@ import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
 import DonationDrive from '@/lib/models/DonationDrive'
 import Donor from '@/lib/models/Donor'
-import { sendOTPViaEmail } from '@/lib/email-service'
+import { sendEmail } from '@/lib/email-service'
+import { resolveParticipantForAdmin } from '@/lib/drive-participant-helpers'
 
 export async function POST(request, { params }) {
   try {
@@ -51,13 +52,14 @@ export async function POST(request, { params }) {
       )
     }
 
-    // Find donor
-    const donor = await Donor.findById(registrationId)
-    if (!donor || donor.driveToken !== drive.registrationToken) {
-      return NextResponse.json(
-        { error: 'Donor not found' },
-        { status: 404 }
-      )
+    const participant = await resolveParticipantForAdmin(drive, registrationId)
+    if (!participant) {
+      return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
+    }
+
+    const donor = await Donor.findById(participant.donorId._id || participant.donorId)
+    if (!donor) {
+      return NextResponse.json({ error: 'Donor not found' }, { status: 404 })
     }
 
     // Use template or custom message
@@ -73,7 +75,12 @@ export async function POST(request, { params }) {
     }
 
     // Send email
-    const emailResult = await sendOTPViaEmail(donor.email, emailBody, emailSubject)
+    const emailResult = await sendEmail({
+      to: donor.email,
+      subject: emailSubject,
+      text: emailBody,
+      html: `<div style="font-family: Arial, sans-serif; white-space: pre-line; line-height: 1.6;">${emailBody}</div>`,
+    })
 
     if (emailResult.success) {
       // Log communication (would be implemented in a full system)

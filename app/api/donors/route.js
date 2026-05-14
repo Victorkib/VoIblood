@@ -8,10 +8,16 @@ import { connectDB } from '@/lib/db'
 import Donor from '@/lib/models/Donor'
 import Organization from '@/lib/models/Organization'
 import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
-import { sendDonorRegistrationEmail } from '@/lib/email-service'
+import { sendDonorRegistrationEmail, sendDonorAdminQuickWelcomeEmail } from '@/lib/email-service'
 import { logAuditEvent, AUDIT_ACTIONS, AUDIT_SEVERITY, getAuditContextFromRequest } from '@/lib/audit-logger'
 import { canPerformAction, hasOrgCapability, ORG_CAPABILITIES } from '@/lib/rbac'
-import { getCurrentUser, getOrganizationFilter } from '@/lib/session'
+import { getCurrentUser } from '@/lib/session'
+import {
+  findDuplicateDonorForOrganization,
+  normalizeDonorEmail,
+  isValidDonorEmail,
+  isPlaceholderOrDisposableEmail,
+} from '@/lib/donor-dedupe'
 
 /**
  * GET /api/donors
@@ -94,11 +100,26 @@ export async function GET(request) {
     const orgDrives = await DonationDrive.find({ organizationId })
     const orgDriveTokens = orgDrives.map(d => d.registrationToken)
 
-    const query = {
-      $or: [
-        { organizationId },
-        { driveToken: { $in: orgDriveTokens } }
+    // Donors belong to the org either directly (organizationId) or via a drive registration (driveToken).
+    const visibilityOr = [
+      { organizationId },
+      { driveToken: { $in: orgDriveTokens } },
+    ]
+
+    const query = {}
+
+    if (search) {
+      const searchRegex = new RegExp(search, 'i')
+      const searchOr = [
+        { firstName: searchRegex },
+        { lastName: searchRegex },
+        { email: searchRegex },
+        { phone: searchRegex },
       ]
+      // AND: must be visible to this org AND match search (do not widen $or across orgs)
+      query.$and = [{ $or: visibilityOr }, { $or: searchOr }]
+    } else {
+      query.$or = visibilityOr
     }
 
     if (bloodType) query.bloodType = bloodType
@@ -110,17 +131,6 @@ export async function GET(request) {
       if (drive) {
         query.driveToken = drive.registrationToken
       }
-    }
-
-    if (search) {
-      const searchRegex = new RegExp(search, 'i')
-      query.$or = query.$or || []
-      query.$or.push(
-        { firstName: searchRegex },
-        { lastName: searchRegex },
-        { email: searchRegex },
-        { phone: searchRegex },
-      )
     }
 
     // Calculate skip
@@ -179,11 +189,23 @@ export async function POST(request) {
 
     const body = await request.json()
     const { firstName, lastName, email, phone, bloodType, dateOfBirth, gender } = body
+    const skipWelcomeEmail = Boolean(body.skipWelcomeEmail)
 
     // Validate required fields
     if (!firstName || !lastName || !email || !phone || !bloodType || !dateOfBirth || !gender) {
       return NextResponse.json(
         { error: 'Missing required fields' },
+        { status: 400 }
+      )
+    }
+
+    const normEmail = normalizeDonorEmail(email)
+    if (!isValidDonorEmail(normEmail)) {
+      return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
+    }
+    if (isPlaceholderOrDisposableEmail(normEmail)) {
+      return NextResponse.json(
+        { error: 'Please use a real contact email. Temporary or disposable addresses are not allowed.' },
         { status: 400 }
       )
     }
@@ -231,11 +253,20 @@ export async function POST(request) {
       )
     }
 
-    // Check if donor already exists
-    const existingDonor = await Donor.findOne({ email, organizationId })
-    if (existingDonor) {
+    const duplicate = await findDuplicateDonorForOrganization(Donor, organizationId, {
+      email: normEmail,
+      phone,
+      firstName,
+      lastName,
+      dateOfBirth,
+    })
+    if (duplicate?.donor) {
       return NextResponse.json(
-        { error: 'Donor with this email already exists in this organization' },
+        {
+          error: 'A donor who appears to be the same person already exists in this organization.',
+          reason: duplicate.reason,
+          donorId: duplicate.donor._id?.toString?.(),
+        },
         { status: 409 }
       )
     }
@@ -243,23 +274,61 @@ export async function POST(request) {
     // Create donor
     const crypto = require('crypto')
     const donorToken = crypto.randomBytes(16).toString('hex')
-    
+
+    const allowedRegistrationTypes = ['online', 'walk_in', 'admin_quick']
+    const registrationType = allowedRegistrationTypes.includes(body.registrationType)
+      ? body.registrationType
+      : 'online'
+
     const donor = await Donor.create({
-      ...body,
+      firstName,
+      lastName,
+      email: normEmail,
+      phone,
+      bloodType,
+      dateOfBirth,
+      gender,
+      weight: body.weight,
+      medicalConditions: body.medicalConditions,
+      medications: body.medications,
+      hasDonatedBefore: body.hasDonatedBefore,
+      lastDonationDate: body.lastDonationDate,
+      driveToken: body.driveToken,
+      driveId: body.driveId,
+      status: body.status || 'registered',
+      registrationType,
+      notes: body.notes,
+      consentGiven: body.consentGiven !== false,
+      isVerified: body.isVerified === true,
       organizationId,
-      donorToken, // Explicitly set donorToken since we removed the pre-save hook
+      donorToken,
     })
 
     // Update organization stats
     organization.totalDonorsRegistered = (organization.totalDonorsRegistered || 0) + 1
     await organization.save()
 
-    // Send registration confirmation email (non-blocking)
-    try {
-      await sendDonorRegistrationEmail(donor, organizationId)
-    } catch (emailErr) {
-      console.warn('Failed to send donor registration email:', emailErr.message)
-      // Don't fail the request if email fails
+    // Welcome / confirmation email (non-blocking)
+    if (!skipWelcomeEmail) {
+      try {
+        if (donor.registrationType === 'admin_quick') {
+          await sendDonorAdminQuickWelcomeEmail({
+            to: donor.email,
+            donorName: `${donor.firstName} ${donor.lastName}`,
+            donorToken: donor.donorToken,
+            organizationName: organization.name,
+          })
+        } else {
+          await sendDonorRegistrationEmail({
+            to: donor.email,
+            donorName: `${donor.firstName} ${donor.lastName}`,
+            driveName: body.driveName || organization.name || 'Blood donation program',
+            appointmentDate: body.appointmentDate || undefined,
+          })
+        }
+      } catch (emailErr) {
+        console.warn('Failed to send donor welcome email:', emailErr.message)
+      }
     }
 
     // Log audit event (non-blocking)

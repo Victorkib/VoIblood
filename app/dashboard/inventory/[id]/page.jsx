@@ -19,11 +19,11 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
-  Loader2,
   FileText,
   TestTube,
   Thermometer,
 } from 'lucide-react'
+import { InventoryDetailPageSkeleton } from '@/components/dashboard/inventory-skeletons'
 
 const statusConfig = {
   available: { label: 'Available', color: 'bg-green-100 text-green-800', icon: CheckCircle },
@@ -88,14 +88,7 @@ export default function InventoryDetailsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-red-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading blood unit details...</p>
-        </div>
-      </div>
-    )
+    return <InventoryDetailPageSkeleton />
   }
 
   if (error || !unit) {
@@ -266,7 +259,7 @@ export default function InventoryDetailsPage() {
         </Card>
       )}
 
-      {/* Test Results */}
+      {/* Test Results — testedFor.{hiv,...} are booleans (screened?); aggregate outcome is testedFor.testResults */}
       {unit.testedFor && (
         <Card>
           <CardHeader>
@@ -274,10 +267,42 @@ export default function InventoryDetailsPage() {
               <TestTube className="w-5 h-5 text-blue-600" />
               Test Results
             </CardTitle>
-            <CardDescription>Screening test results for this blood unit</CardDescription>
+            <CardDescription>Screening markers and panel outcome for this unit</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-3 gap-4">
+          <CardContent className="space-y-4">
+            {unit.testedFor.testResults != null && unit.testedFor.testResults !== '' && (
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <p className="text-sm font-medium text-muted-foreground mb-2">Panel outcome</p>
+                {(() => {
+                  const panel = String(unit.testedFor.testResults).toLowerCase()
+                  const isNegative = panel === 'negative'
+                  const isPending = panel === 'pending'
+                  const label =
+                    typeof unit.testedFor.testResults === 'string'
+                      ? unit.testedFor.testResults.charAt(0).toUpperCase() + unit.testedFor.testResults.slice(1)
+                      : String(unit.testedFor.testResults)
+                  return (
+                    <Badge
+                      className={
+                        isNegative
+                          ? 'bg-green-100 text-green-800'
+                          : isPending
+                            ? 'bg-amber-100 text-amber-900'
+                            : 'bg-red-100 text-red-800'
+                      }
+                    >
+                      {isNegative ? (
+                        <CheckCircle className="mr-1 inline h-3 w-3" />
+                      ) : (
+                        <AlertTriangle className="mr-1 inline h-3 w-3" />
+                      )}
+                      {label}
+                    </Badge>
+                  )
+                })()}
+              </div>
+            )}
+            <div className="grid gap-3 md:grid-cols-3">
               {[
                 { name: 'HIV', key: 'hiv' },
                 { name: 'Hepatitis B', key: 'hepatitisB' },
@@ -286,33 +311,50 @@ export default function InventoryDetailsPage() {
                 { name: 'Malaria', key: 'malaria' },
                 { name: 'COVID-19', key: 'covid19' },
               ].map((test) => {
-                const result = unit.testedFor[test.key]
-                if (!result) return null
+                const raw = unit.testedFor[test.key]
+                if (raw == null || raw === false) return null
 
-                const isNegative = result === 'negative'
-                return (
-                  <div key={test.key} className="p-3 bg-secondary/10 rounded-lg">
-                    <p className="text-sm font-medium mb-1">{test.name}</p>
-                    <Badge className={isNegative ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
-                      {isNegative ? (
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                      ) : (
-                        <AlertTriangle className="w-3 h-3 mr-1" />
-                      )}
-                      {result.charAt(0).toUpperCase() + result.slice(1)}
-                    </Badge>
-                  </div>
-                )
+                if (typeof raw === 'string') {
+                  const isNegative = raw === 'negative'
+                  const label = raw.charAt(0).toUpperCase() + raw.slice(1)
+                  return (
+                    <div key={test.key} className="rounded-lg bg-secondary/10 p-3">
+                      <p className="mb-1 text-sm font-medium">{test.name}</p>
+                      <Badge className={isNegative ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+                        {isNegative ? (
+                          <CheckCircle className="mr-1 inline h-3 w-3" />
+                        ) : (
+                          <AlertTriangle className="mr-1 inline h-3 w-3" />
+                        )}
+                        {label}
+                      </Badge>
+                    </div>
+                  )
+                }
+
+                if (raw === true) {
+                  return (
+                    <div key={test.key} className="rounded-lg bg-secondary/10 p-3">
+                      <p className="mb-1 text-sm font-medium">{test.name}</p>
+                      <Badge variant="secondary" className="font-normal">
+                        <CheckCircle className="mr-1 inline h-3 w-3 text-green-600" />
+                        Screened (panel)
+                      </Badge>
+                    </div>
+                  )
+                }
+
+                return null
               })}
-              {unit.testedFor.testDate && (
-                <div className="p-3 bg-secondary/10 rounded-lg">
-                  <p className="text-sm font-medium mb-1">Test Date</p>
-                  <p className="text-sm text-foreground/60">
-                    {new Date(unit.testedFor.testDate).toLocaleDateString()}
-                  </p>
-                </div>
-              )}
             </div>
+            {unit.testedFor.testDate && (
+              <div className="rounded-lg bg-secondary/10 p-3">
+                <p className="mb-1 text-sm font-medium">Test date</p>
+                <p className="text-sm text-muted-foreground">
+                  {new Date(unit.testedFor.testDate).toLocaleDateString()}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

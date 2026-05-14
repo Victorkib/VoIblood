@@ -63,6 +63,8 @@ import {
   ExternalLink,
   TrendingUp,
   Activity,
+  Sparkles,
+  Info,
 } from 'lucide-react'
 
 // Blood type color coding
@@ -110,13 +112,21 @@ const statusConfig = {
     icon: XCircle,
     color: 'text-gray-600'
   },
-  no_show: { 
-    label: 'No Show', 
-    bg: 'bg-red-100', 
-    text: 'text-red-800', 
-    border: 'border-red-300',
-    icon: UserX,
-    color: 'text-red-600'
+  completed: {
+    label: 'Completed',
+    bg: 'bg-emerald-100',
+    text: 'text-emerald-800',
+    border: 'border-emerald-300',
+    icon: Award,
+    color: 'text-emerald-600',
+  },
+  declined: {
+    label: 'Declined',
+    bg: 'bg-slate-100',
+    text: 'text-slate-700',
+    border: 'border-slate-300',
+    icon: XCircle,
+    color: 'text-slate-500',
   },
 }
 
@@ -133,6 +143,7 @@ export default function DriveDetailsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [bloodTypeFilter, setBloodTypeFilter] = useState('all')
+  const [sourceFilter, setSourceFilter] = useState('all')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionSuccess, setActionSuccess] = useState(null)
   const [actionError, setActionError] = useState(null)
@@ -156,6 +167,15 @@ export default function DriveDetailsPage() {
     component: 'whole_blood',
     technician: '',
     notes: '',
+    eligibilityStatus: 'pending',
+    bloodWorkFindings: '',
+    recommendations: '',
+    screeningResults: {
+      hiv: 'pending',
+      hepatitisB: 'pending',
+      hepatitisC: 'pending',
+      syphilis: 'pending',
+    },
   })
   const [recordDonationLoading, setRecordDonationLoading] = useState(false)
 
@@ -256,6 +276,15 @@ export default function DriveDetailsPage() {
       component: 'whole_blood',
       technician: '',
       notes: '',
+      eligibilityStatus: 'pending',
+      bloodWorkFindings: '',
+      recommendations: '',
+      screeningResults: {
+        hiv: 'pending',
+        hepatitisB: 'pending',
+        hepatitisC: 'pending',
+        syphilis: 'pending',
+      },
     })
     setIsRecordDonationOpen(true)
   }
@@ -285,44 +314,28 @@ export default function DriveDetailsPage() {
     setRecordDonationLoading(true)
     setActionError(null)
     try {
-      // Calculate expiry date (35 days from now for whole blood)
-      const collectionDate = new Date()
-      const expiryDate = new Date(collectionDate)
-      expiryDate.setDate(expiryDate.getDate() + 35)
-
-      // Use the unified /api/inventory endpoint so all blood donations go to same storage
-      const res = await fetch('/api/inventory', {
+      // Use dedicated record-donation endpoint.
+      // It records inventory + donor completion + notifications atomically.
+      const res = await fetch(`/api/admin/drives/${params.id}/registrations/${selectedDonor.id}/record-donation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include', // CRITICAL: Send cookies (auth-session)
         body: JSON.stringify({
-          organizationId: drive.organizationId._id || drive.organizationId,
-          bloodType: selectedDonor.bloodType,
-          donorId: selectedDonor.id,
-          donorName: selectedDonor.fullName,
-          donorEmail: selectedDonor.email,
-          collectionDate: collectionDate.toISOString(),
-          expiryDate: expiryDate.toISOString(),
           volume: recordDonationForm.volume,
           component: recordDonationForm.component,
           technician: recordDonationForm.technician,
           notes: recordDonationForm.notes,
-          driveId: drive._id,
-          driveName: drive.name,
+          eligibilityStatus: recordDonationForm.eligibilityStatus,
+          bloodWorkFindings: recordDonationForm.bloodWorkFindings,
+          recommendations: recordDonationForm.recommendations,
+          screeningResults: recordDonationForm.screeningResults,
+          sendNotification: true,
         }),
       })
 
       const data = await res.json()
 
       if (res.ok) {
-        // Update donor status to completed via the drives endpoint
-        await fetch(`/api/admin/drives/${params.id}/registrations/${selectedDonor.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ status: 'completed', sendNotification: true }),
-        })
-
         setActionSuccess(`✅ Donation recorded for ${selectedDonor.fullName}! Unit ID: ${data.data.unitId}`)
         setIsRecordDonationOpen(false)
         setRecordDonationForm({
@@ -330,6 +343,15 @@ export default function DriveDetailsPage() {
           component: 'whole_blood',
           technician: '',
           notes: '',
+          eligibilityStatus: 'pending',
+          bloodWorkFindings: '',
+          recommendations: '',
+          screeningResults: {
+            hiv: 'pending',
+            hepatitisB: 'pending',
+            hepatitisC: 'pending',
+            syphilis: 'pending',
+          },
         })
         fetchDriveDetails()
         setTimeout(() => setActionSuccess(null), 5000)
@@ -431,13 +453,14 @@ export default function DriveDetailsPage() {
 
   const handleExport = () => {
     const csv = [
-      ['Name', 'Email', 'Phone', 'Blood Type', 'Status', 'Registered At'],
+      ['Name', 'Email', 'Phone', 'Blood Type', 'Status', 'Source', 'Registered At'],
       ...registrations.map(r => [
         r.fullName,
         r.email,
         r.phone,
         r.bloodType,
         r.status,
+        r.source || 'public',
         new Date(r.registeredAt).toLocaleDateString(),
       ]),
     ].map(row => row.join(',')).join('\n')
@@ -480,16 +503,24 @@ export default function DriveDetailsPage() {
                          r.phone.includes(search)
     const matchesStatus = statusFilter === 'all' || r.status === statusFilter
     const matchesBloodType = bloodTypeFilter === 'all' || r.bloodType === bloodTypeFilter
-    return matchesSearch && matchesStatus && matchesBloodType
+    const matchesSource = sourceFilter === 'all' || (r.source || 'public') === sourceFilter
+    return matchesSearch && matchesStatus && matchesBloodType && matchesSource
   })
 
+  const rosterForStats = registrations.filter((r) => r.status !== 'declined')
+  const pendingCheckIn = rosterForStats.filter((r) =>
+    ['registered', 'confirmed'].includes(r.status)
+  ).length
+
   const stats = {
-    total: registrations.length,
-    checkedIn: registrations.filter(r => r.status === 'checked_in').length,
-    noShow: registrations.filter(r => r.status === 'no_show').length,
-    cancelled: registrations.filter(r => r.status === 'cancelled').length,
-    confirmed: registrations.filter(r => r.status === 'confirmed').length,
-    registered: registrations.filter(r => r.status === 'registered').length,
+    total: rosterForStats.length,
+    declined: registrations.filter((r) => r.status === 'declined').length,
+    checkedIn: rosterForStats.filter(r => r.status === 'checked_in').length,
+    noShow: rosterForStats.filter(r => r.status === 'no_show').length,
+    cancelled: rosterForStats.filter(r => r.status === 'cancelled').length,
+    confirmed: rosterForStats.filter(r => r.status === 'confirmed').length,
+    registered: rosterForStats.filter(r => r.status === 'registered').length,
+    completed: rosterForStats.filter(r => r.status === 'completed').length,
   }
 
   const progressPercentage = drive?.targetDonors > 0 
@@ -721,12 +752,12 @@ export default function DriveDetailsPage() {
             <div className="flex gap-3 flex-wrap">
               <Button
                 onClick={handleBulkCheckIn}
-                disabled={actionLoading || stats.checkedIn === stats.total}
+                disabled={actionLoading || pendingCheckIn === 0}
                 className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white shadow-md"
-                title={stats.checkedIn === stats.total ? 'All donors checked in' : 'Check in all registered donors'}
+                title={pendingCheckIn === 0 ? 'No registered/confirmed donors to check in' : 'Check in all registered donors'}
               >
                 <Users className="w-4 h-4 mr-2" />
-                Check In All ({stats.total - stats.checkedIn} pending)
+                Check In All ({pendingCheckIn})
               </Button>
               <Button
                 variant="outline"
@@ -800,6 +831,19 @@ export default function DriveDetailsPage() {
                   <option value="checked_in">Checked In</option>
                   <option value="cancelled">Cancelled</option>
                   <option value="no_show">No Show</option>
+                  <option value="declined">Declined (RSVP)</option>
+                  <option value="completed">Completed</option>
+                </select>
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  className="px-4 py-2 border border-border rounded-lg bg-background text-foreground"
+                >
+                  <option value="all">All channels</option>
+                  <option value="public">Public link</option>
+                  <option value="outreach">Outreach / RSVP</option>
+                  <option value="walk_in">Walk-in</option>
+                  <option value="admin">Admin</option>
                 </select>
                 <select
                   value={bloodTypeFilter}
@@ -848,6 +892,17 @@ export default function DriveDetailsPage() {
                           <div className="flex-1">
                             <div className="flex items-center gap-3">
                               <h3 className="font-semibold text-lg">{reg.fullName}</h3>
+                              {reg.source === 'outreach' && (
+                                <Badge className="bg-rose-50 text-rose-800 border border-rose-200 text-xs font-medium">
+                                  <Sparkles className="w-3 h-3 mr-1" />
+                                  RSVP
+                                </Badge>
+                              )}
+                              {reg.source === 'walk_in' && (
+                                <Badge className="bg-amber-50 text-amber-900 border border-amber-200 text-xs font-medium">
+                                  Walk-in
+                                </Badge>
+                              )}
                               {getBloodTypeBadge(reg.bloodType)}
                               {getStatusBadge(reg.status)}
                             </div>
@@ -946,7 +1001,7 @@ export default function DriveDetailsPage() {
       {/* Enhanced Donor Details Drawer */}
       {selectedDonor && (
         <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
-          <SheetContent className="w-[500px] sm:w-[600px] p-0 overflow-hidden flex flex-col">
+          <SheetContent className="flex w-full flex-col overflow-hidden p-0 sm:max-w-md md:max-w-lg">
             <SheetDescription className="sr-only">
               Donor details for {selectedDonor.fullName}
             </SheetDescription>
@@ -957,13 +1012,13 @@ export default function DriveDetailsPage() {
                 <Droplet className="absolute bottom-4 left-4 w-24 h-24" />
               </div>
               <div className="relative z-10">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                <div className="flex min-w-0 items-start justify-between gap-2 mb-4">
+                  <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                    <div className="w-14 h-14 shrink-0 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white text-xl font-bold shadow-lg sm:w-16 sm:h-16 sm:text-2xl">
                       {selectedDonor.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                     </div>
-                    <div>
-                      <SheetTitle className="text-2xl font-bold">{selectedDonor.fullName}</SheetTitle>
+                    <div className="min-w-0">
+                      <SheetTitle className="text-xl font-bold break-words sm:text-2xl">{selectedDonor.fullName}</SheetTitle>
                       <div className="flex items-center gap-2 mt-2">
                         {getBloodTypeBadge(selectedDonor.bloodType)}
                         {getStatusBadge(selectedDonor.status)}
@@ -979,14 +1034,18 @@ export default function DriveDetailsPage() {
                     <X className="w-5 h-5" />
                   </Button>
                 </div>
-                <div className="flex items-center gap-4 text-sm text-white/90">
-                  <span className="flex items-center gap-1">
-                    <Mail className="w-4 h-4" />
-                    {selectedDonor.email}
+                <div className="flex flex-col gap-2 text-sm text-white/90 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-1">
+                  <span className="flex min-w-0 items-center gap-1">
+                    <Mail className="w-4 h-4 shrink-0" />
+                    <span className="break-all" title={selectedDonor.email}>
+                      {selectedDonor.email}
+                    </span>
                   </span>
-                  <span className="flex items-center gap-1">
-                    <Phone className="w-4 h-4" />
-                    {selectedDonor.phone}
+                  <span className="flex min-w-0 items-center gap-1">
+                    <Phone className="w-4 h-4 shrink-0" />
+                    <span className="break-all" title={selectedDonor.phone}>
+                      {selectedDonor.phone}
+                    </span>
                   </span>
                 </div>
               </div>
@@ -1005,9 +1064,17 @@ export default function DriveDetailsPage() {
                     <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-gray-200 -z-10"></div>
                     {['registered', 'confirmed', 'checked_in'].map((status, index) => {
                       const config = statusConfig[status]
-                      const isCompleted = 
-                        status === selectedDonor.status || 
-                        Object.keys(statusConfig).indexOf(selectedDonor.status) > index
+                      const rank = {
+                        registered: 0,
+                        confirmed: 1,
+                        checked_in: 2,
+                        completed: 3,
+                        no_show: 2,
+                        cancelled: 0,
+                        declined: -1,
+                      }
+                      const r = rank[selectedDonor.status] ?? -1
+                      const isCompleted = r >= index
                       return (
                         <div key={status} className="flex flex-col items-center gap-2 bg-white px-2">
                           <div 
@@ -1295,133 +1362,312 @@ export default function DriveDetailsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Record Donation Modal */}
-      <Dialog open={isRecordDonationOpen} onOpenChange={setIsRecordDonationOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center">
-                <Droplet className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl">Record Blood Donation</h2>
-                <p className="text-sm text-gray-500 font-normal">
-                  {selectedDonor?.fullName} • {selectedDonor?.bloodType}
+      {/* Record Donation Modal — constrained height, scrollable body, pinned footer */}
+      <Dialog
+        open={isRecordDonationOpen}
+        onOpenChange={(open) => {
+          setIsRecordDonationOpen(open)
+          if (!open) setActionError(null)
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="flex max-h-[min(92vh,880px)] w-[calc(100vw-1.25rem)] max-w-lg flex-col gap-0 overflow-hidden rounded-xl p-0 shadow-2xl sm:max-w-xl md:max-w-2xl"
+        >
+          <div className="relative shrink-0 border-b border-white/10 bg-gradient-to-br from-red-600 via-red-600 to-rose-700 px-5 pb-4 pt-5 text-white sm:px-6 sm:pb-5 sm:pt-6">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-2 top-2 h-9 w-9 text-white hover:bg-white/15 sm:right-3 sm:top-3"
+              onClick={() => {
+                setIsRecordDonationOpen(false)
+                setActionError(null)
+              }}
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+            <DialogHeader className="space-y-2 pr-10 text-left sm:pr-12">
+              <DialogTitle className="flex items-start gap-3 text-xl font-bold tracking-tight text-white sm:text-2xl">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 shadow-inner ring-1 ring-white/20">
+                  <Droplet className="h-5 w-5 text-white sm:h-6 sm:w-6" aria-hidden />
+                </span>
+                <span className="min-w-0 pt-0.5 leading-snug">Record blood donation</span>
+              </DialogTitle>
+              <DialogDescription className="text-left text-sm leading-relaxed text-white/85">
+                {selectedDonor ? (
+                  <>
+                    <span className="font-medium text-white">{selectedDonor.fullName}</span>
+                    <span className="text-white/70"> · </span>
+                    <span>{selectedDonor.bloodType}</span>
+                    <span className="mt-2 block text-white/80">
+                      Creates an inventory unit, marks the donor completed, and sends their follow-up email.
+                    </span>
+                  </>
+                ) : (
+                  'Complete the donation details for this donor.'
+                )}
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4 sm:px-6 sm:py-5">
+            <div className="space-y-5">
+              {selectedDonor && selectedDonor.status !== 'checked_in' && (
+                <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-3 sm:p-4">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden />
+                  <div className="min-w-0 text-sm text-red-900">
+                    <p className="font-semibold">Cannot record yet</p>
+                    <p className="mt-1 text-red-800/90">
+                      Donor must be checked in first. Current status:{' '}
+                      <span className="font-semibold capitalize">
+                        {selectedDonor.status?.replace(/_/g, ' ')}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <section className="rounded-xl border border-border/80 bg-muted/30 p-4 sm:p-5">
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden />
+                  Collection
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2 sm:col-span-2">
+                    <label htmlFor="record-component" className="text-sm font-medium">
+                      Blood component <span className="text-red-600">*</span>
+                    </label>
+                    <select
+                      id="record-component"
+                      value={recordDonationForm.component}
+                      onChange={(e) =>
+                        setRecordDonationForm({ ...recordDonationForm, component: e.target.value })
+                      }
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      disabled={recordDonationLoading}
+                    >
+                      <option value="">Select component…</option>
+                      <option value="whole_blood">Whole blood</option>
+                      <option value="rbc">Red blood cells</option>
+                      <option value="plasma">Plasma</option>
+                      <option value="platelets">Platelets</option>
+                      <option value="cryo">Cryoprecipitate</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <label htmlFor="record-volume" className="text-sm font-medium">
+                      Volume (ml) <span className="text-red-600">*</span>
+                    </label>
+                    <Input
+                      id="record-volume"
+                      type="number"
+                      value={recordDonationForm.volume || ''}
+                      onChange={(e) =>
+                        setRecordDonationForm({
+                          ...recordDonationForm,
+                          volume: parseInt(e.target.value, 10) || 0,
+                        })
+                      }
+                      placeholder="450"
+                      min={200}
+                      max={500}
+                      disabled={recordDonationLoading}
+                      className="h-10"
+                    />
+                    <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:justify-between">
+                      <span>Standard whole blood: 450 ml</span>
+                      <span>Allowed range: 200–500 ml</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border/80 bg-background p-4 sm:p-5">
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" aria-hidden />
+                  Staff & notes
+                </h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="record-tech" className="text-sm font-medium">
+                      Technician <span className="font-normal text-muted-foreground">(optional)</span>
+                    </label>
+                    <Input
+                      id="record-tech"
+                      value={recordDonationForm.technician}
+                      onChange={(e) =>
+                        setRecordDonationForm({ ...recordDonationForm, technician: e.target.value })
+                      }
+                      placeholder="Who collected this unit?"
+                      disabled={recordDonationLoading}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="record-notes" className="text-sm font-medium">
+                      Notes <span className="font-normal text-muted-foreground">(optional)</span>
+                    </label>
+                    <Textarea
+                      id="record-notes"
+                      value={recordDonationForm.notes}
+                      onChange={(e) =>
+                        setRecordDonationForm({ ...recordDonationForm, notes: e.target.value })
+                      }
+                      placeholder="Arm site, reaction, deferral context…"
+                      rows={3}
+                      disabled={recordDonationLoading}
+                      className="min-h-[5rem] resize-y text-sm"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border/80 bg-muted/20 p-4 sm:p-5">
+                <h3 className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+                  Screening markers
+                </h3>
+                <p className="mb-3 text-xs text-muted-foreground">Infectious disease screening results on file.</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {['hiv', 'hepatitisB', 'hepatitisC', 'syphilis'].map((testKey) => (
+                    <div key={testKey} className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        {testKey === 'hiv'
+                          ? 'HIV'
+                          : testKey === 'hepatitisB'
+                            ? 'Hepatitis B'
+                            : testKey === 'hepatitisC'
+                              ? 'Hepatitis C'
+                              : 'Syphilis'}
+                      </label>
+                      <select
+                        value={recordDonationForm.screeningResults[testKey]}
+                        onChange={(e) =>
+                          setRecordDonationForm({
+                            ...recordDonationForm,
+                            screeningResults: {
+                              ...recordDonationForm.screeningResults,
+                              [testKey]: e.target.value,
+                            },
+                          })
+                        }
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        disabled={recordDonationLoading}
+                      >
+                        <option value="negative">Negative</option>
+                        <option value="positive">Positive</option>
+                        <option value="inconclusive">Inconclusive</option>
+                        <option value="pending">Pending</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border/80 bg-background p-4 sm:p-5">
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+                  Donor communication
+                </h3>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Included in the post-donation email to the donor.
                 </p>
-              </div>
-            </DialogTitle>
-            <DialogDescription>
-              Complete the donation details below. This will create a blood inventory record and update the donor&apos;s history.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            {/* Status Check */}
-            {selectedDonor && selectedDonor.status !== 'checked_in' && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-red-900">
-                    <p className="font-semibold">Cannot Record Donation</p>
-                    <p className="mt-1">Donor must be checked in first. Current status: <span className="font-semibold capitalize">{selectedDonor.status?.replace('_', ' ')}</span></p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="record-elig" className="text-sm font-medium">
+                      Eligibility status
+                    </label>
+                    <select
+                      id="record-elig"
+                      value={recordDonationForm.eligibilityStatus}
+                      onChange={(e) =>
+                        setRecordDonationForm({
+                          ...recordDonationForm,
+                          eligibilityStatus: e.target.value,
+                        })
+                      }
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      disabled={recordDonationLoading}
+                    >
+                      <option value="eligible">Eligible for future donation</option>
+                      <option value="temporarily_deferred">Temporarily deferred</option>
+                      <option value="ineligible">Needs follow-up</option>
+                      <option value="pending">Pending review</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="record-findings" className="text-sm font-medium">
+                      Blood work findings
+                    </label>
+                    <Textarea
+                      id="record-findings"
+                      value={recordDonationForm.bloodWorkFindings}
+                      onChange={(e) =>
+                        setRecordDonationForm({
+                          ...recordDonationForm,
+                          bloodWorkFindings: e.target.value,
+                        })
+                      }
+                      placeholder="e.g. Screening panel negative; hemoglobin within range."
+                      rows={3}
+                      disabled={recordDonationLoading}
+                      className="min-h-[5rem] resize-y text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="record-rec" className="text-sm font-medium">
+                      Recommendations
+                    </label>
+                    <Textarea
+                      id="record-rec"
+                      value={recordDonationForm.recommendations}
+                      onChange={(e) =>
+                        setRecordDonationForm({
+                          ...recordDonationForm,
+                          recommendations: e.target.value,
+                        })
+                      }
+                      placeholder="Hydration, iron-rich foods, when to donate again…"
+                      rows={3}
+                      disabled={recordDonationLoading}
+                      className="min-h-[5rem] resize-y text-sm"
+                    />
                   </div>
                 </div>
-              </div>
-            )}
+              </section>
 
-            {/* Blood Component */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Blood Component <span className="text-red-600">*</span></label>
-              <select
-                value={recordDonationForm.component}
-                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, component: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                disabled={recordDonationLoading}
-              >
-                <option value="">-- Select Component --</option>
-                <option value="whole_blood">Whole Blood</option>
-                <option value="rbc">Red Blood Cells</option>
-                <option value="plasma">Plasma</option>
-                <option value="platelets">Platelets</option>
-                <option value="cryo">Cryoprecipitate</option>
-              </select>
-            </div>
-
-            {/* Volume */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Volume (ml) <span className="text-red-600">*</span></label>
-              <Input
-                type="number"
-                value={recordDonationForm.volume}
-                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, volume: parseInt(e.target.value) || 0 })}
-                placeholder="450"
-                min={200}
-                max={500}
-                disabled={recordDonationLoading}
-              />
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-500">Standard whole blood donation is 450ml</p>
-                <p className="text-xs text-gray-500">Valid range: 200-500ml</p>
-              </div>
-            </div>
-
-            {/* Technician */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Technician Name (Optional)</label>
-              <Input
-                value={recordDonationForm.technician}
-                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, technician: e.target.value })}
-                placeholder="Who collected this donation?"
-                disabled={recordDonationLoading}
-              />
-            </div>
-
-            {/* Notes */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Notes (Optional)</label>
-              <Textarea
-                value={recordDonationForm.notes}
-                onChange={(e) => setRecordDonationForm({ ...recordDonationForm, notes: e.target.value })}
-                placeholder="Any additional notes about this donation..."
-                rows={3}
-                className="resize-none"
-                disabled={recordDonationLoading}
-              />
-            </div>
-
-            {/* Error Display */}
-            {actionError && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-red-900">
-                    <p className="font-semibold">Error</p>
-                    <p className="mt-1">{actionError}</p>
+              {actionError && (
+                <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-3 sm:p-4">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden />
+                  <div className="min-w-0 text-sm text-red-900">
+                    <p className="font-semibold">Something went wrong</p>
+                    <p className="mt-1 break-words text-red-800/95">{actionError}</p>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Info Box */}
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-                <div className="text-sm text-blue-900">
-                  <p className="font-semibold mb-1">What happens next:</p>
-                  <ul className="list-disc list-inside space-y-1 text-blue-800">
-                    <li>Donor status will change to &quot;completed&quot;</li>
-                    <li>Blood unit added to inventory</li>
-                    <li>Thank you SMS &amp; email sent to donor</li>
-                    <li>Next eligible date calculated (56 days)</li>
+              <div className="flex gap-3 rounded-lg border border-blue-200/80 bg-blue-50/90 px-3 py-3 text-xs text-blue-950 sm:px-4">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+                <div>
+                  <p className="font-semibold text-blue-900">After you save</p>
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-blue-900/90">
+                    <li>Donor moves to completed</li>
+                    <li>Unit appears in inventory</li>
+                    <li>Thank-you email sent</li>
+                    <li>Next eligible date set (56 days)</li>
                   </ul>
                 </div>
               </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 gap-2 border-t bg-muted/40 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
             <Button
+              type="button"
               variant="outline"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setIsRecordDonationOpen(false)
                 setActionError(null)
@@ -1431,19 +1677,20 @@ export default function DriveDetailsPage() {
               Cancel
             </Button>
             <Button
+              type="button"
+              className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 sm:w-auto"
               onClick={handleRecordDonation}
               disabled={recordDonationLoading || selectedDonor?.status !== 'checked_in'}
-              className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600"
             >
               {recordDonationLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Recording...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Recording…
                 </>
               ) : (
                 <>
-                  <Droplet className="w-4 h-4 mr-2" />
-                  Record Donation
+                  <Droplet className="mr-2 h-4 w-4" />
+                  Record donation
                 </>
               )}
             </Button>

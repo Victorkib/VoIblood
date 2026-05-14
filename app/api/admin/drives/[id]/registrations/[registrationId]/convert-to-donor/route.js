@@ -104,7 +104,12 @@ export async function POST(request, { params }) {
 
     // Send donor registration email
     try {
-      await sendDonorRegistrationEmail(donor, drive.organizationId)
+      await sendDonorRegistrationEmail({
+        to: donor.email,
+        donorName: `${donor.firstName} ${donor.lastName}`,
+        driveName: drive.name,
+        appointmentDate: drive.date,
+      })
     } catch (emailErr) {
       console.warn('Failed to send donor registration email:', emailErr.message)
     }

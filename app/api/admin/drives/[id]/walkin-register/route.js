@@ -12,6 +12,7 @@ import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
 import DonationDrive from '@/lib/models/DonationDrive'
 import Donor from '@/lib/models/Donor'
+import { findDuplicateDonorForOrganization } from '@/lib/donor-dedupe'
 
 export async function POST(request, { params }) {
   try {
@@ -76,20 +77,22 @@ export async function POST(request, { params }) {
     // Check if donor already exists with this email/phone in the organization
     const normalizedEmail = email.toLowerCase().trim()
     const normalizedPhone = phone.replace(/[\s\-\(\)]/g, '')
+    const birthDate = new Date(dateOfBirth)
 
-    const existingDonor = await Donor.findOne({
-      organizationId: drive.organizationId,
-      $or: [
-        { email: normalizedEmail },
-        { phone: normalizedPhone },
-      ],
+    const duplicate = await findDuplicateDonorForOrganization(Donor, drive.organizationId, {
+      email: normalizedEmail,
+      phone,
+      firstName,
+      lastName,
+      dateOfBirth: birthDate,
     })
 
-    if (existingDonor) {
+    if (duplicate?.donor) {
       return NextResponse.json(
         {
-          error: 'Donor already registered with this email or phone',
-          donorId: existingDonor._id.toString(),
+          error: 'A donor who appears to be the same person already exists in this organization.',
+          reason: duplicate.reason,
+          donorId: duplicate.donor._id?.toString?.(),
           duplicate: true,
         },
         { status: 409 }
@@ -97,7 +100,6 @@ export async function POST(request, { params }) {
     }
 
     // Calculate age
-    const birthDate = new Date(dateOfBirth)
     const age = new Date().getFullYear() - birthDate.getFullYear()
 
     if (age < 18 || age > 65) {
@@ -136,12 +138,8 @@ export async function POST(request, { params }) {
       notes: notes || '',
     })
 
-    // Update drive registration count
-    if (!drive.stats) {
-      drive.stats = { clicks: 0, registrations: 0, confirmed: 0, completed: 0 }
-    }
-    drive.stats.registrations = (drive.stats.registrations || 0) + 1
-    await drive.save()
+    const { upsertParticipant } = await import('@/lib/drive-participant-helpers')
+    await upsertParticipant(drive._id, donor._id, { source: 'walk_in', status: 'checked_in' })
 
     return NextResponse.json({
       success: true,

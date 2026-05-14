@@ -1,11 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Card } from '@/components/ui/card'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { X, Search, UserPlus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Search, UserPlus, X, Users } from 'lucide-react'
+
+function donorKey(d) {
+  return d?.id ?? d?._id ?? ''
+}
 
 export function DonorSelectorModal({ isOpen, onClose, onSelect, onAddNew, organizationId }) {
   const [donors, setDonors] = useState([])
@@ -15,12 +26,13 @@ export function DonorSelectorModal({ isOpen, onClose, onSelect, onAddNew, organi
   const [selectedDonor, setSelectedDonor] = useState(null)
 
   useEffect(() => {
-    if (isOpen && organizationId) {
-      fetchDonors()
+    if (isOpen) {
+      setSelectedDonor(null)
     }
-  }, [isOpen, search, organizationId])
+  }, [isOpen])
 
-  const fetchDonors = async () => {
+  const fetchDonors = useCallback(async () => {
+    if (!organizationId) return
     try {
       setLoading(true)
       setError(null)
@@ -29,7 +41,7 @@ export function DonorSelectorModal({ isOpen, onClose, onSelect, onAddNew, organi
         organizationId,
         search: search || '',
         page: '1',
-        limit: '20',
+        limit: '40',
       })
 
       const response = await fetch(`/api/donors?${params}`)
@@ -46,7 +58,13 @@ export function DonorSelectorModal({ isOpen, onClose, onSelect, onAddNew, organi
     } finally {
       setLoading(false)
     }
-  }
+  }, [organizationId, search])
+
+  useEffect(() => {
+    if (isOpen && organizationId) {
+      fetchDonors()
+    }
+  }, [isOpen, organizationId, fetchDonors])
 
   const handleSelect = () => {
     if (selectedDonor) {
@@ -80,131 +98,151 @@ export function DonorSelectorModal({ isOpen, onClose, onSelect, onAddNew, organi
 
     if (diffDays < 56) {
       const daysLeft = 56 - diffDays
-      return { 
-        eligible: false, 
-        text: `${daysLeft} days left`, 
-        color: 'text-red-600' 
+      return {
+        eligible: false,
+        text: `${daysLeft} days left`,
+        color: 'text-red-600',
       }
     }
 
     return { eligible: true, text: 'Eligible', color: 'text-green-600' }
   }
 
-  if (!isOpen) return null
-
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 border-b border-border px-6 py-4 flex items-center justify-between bg-background z-10">
-          <h2 className="text-xl font-semibold text-foreground">Select Donor</h2>
-          <button onClick={onClose} className="text-foreground/60 hover:text-foreground">
-            <X className="w-5 h-5" />
-          </button>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[min(90vh,720px)] w-[calc(100vw-1.25rem)] max-w-lg flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-xl md:max-w-2xl"
+      >
+        <div className="relative shrink-0 border-b border-white/10 bg-gradient-to-br from-slate-700 via-slate-600 to-slate-800 px-5 pb-4 pt-5 text-white sm:px-6">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-2 top-2 h-9 w-9 text-white hover:bg-white/15"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+          <DialogHeader className="space-y-1 pr-10 text-left">
+            <DialogTitle className="flex items-center gap-3 text-xl font-bold text-white sm:text-2xl">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
+                <Users className="h-5 w-5" aria-hidden />
+              </span>
+              Select donor
+            </DialogTitle>
+            <DialogDescription className="text-left text-sm text-white/80">
+              Search your roster, tap a row, then confirm. Opens above the collection form.
+            </DialogDescription>
+          </DialogHeader>
         </div>
 
-        <div className="p-6 space-y-4">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
-            <Input
-              placeholder="Search by name, email, or phone..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10"
-              autoFocus
-            />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 space-y-3 border-b bg-muted/30 px-4 py-3 sm:px-5">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Name, email, or phone…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-10 pl-10"
+              />
+            </div>
+            <Button type="button" variant="outline" className="h-10 w-full border-dashed" onClick={onAddNew}>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Quick add new donor
+            </Button>
           </div>
 
-          {/* Add New Donor Button */}
-          <Button
-            variant="outline"
-            onClick={onAddNew}
-            className="w-full"
-          >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Add New Donor
-          </Button>
-
-          {/* Donors List */}
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
-              <p className="text-sm text-gray-500">Loading donors...</p>
-            </div>
-          ) : error ? (
-            <div className="text-center py-12 text-red-600">
-              <p>{error}</p>
-            </div>
-          ) : donors.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <UserPlus className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p>No donors found</p>
-              <p className="text-sm mt-1">Click "Add New Donor" to create one</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {donors.map((donor) => {
-                const eligibility = getEligibilityStatus(donor)
-                const isSelected = selectedDonor?.id === donor.id
-
-                return (
-                  <div
-                    key={donor.id}
-                    onClick={() => setSelectedDonor(donor)}
-                    className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold">{donor.fullName}</h3>
-                          <Badge className={getBloodTypeBadge(donor.bloodType)}>
-                            {donor.bloodType}
-                          </Badge>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-3 sm:px-5">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                <p className="text-sm">Loading donors…</p>
+              </div>
+            ) : error ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center text-sm text-red-800">
+                {error}
+              </div>
+            ) : donors.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-14 text-center text-muted-foreground">
+                <UserPlus className="mb-2 h-12 w-12 opacity-40" />
+                <p className="font-medium text-foreground">No donors match</p>
+                <p className="mt-1 max-w-xs text-sm">Try another search or quick add a new donor.</p>
+              </div>
+            ) : (
+              <ul className="space-y-2 pb-1">
+                {donors.map((donor) => {
+                  const eligibility = getEligibilityStatus(donor)
+                  const id = donorKey(donor)
+                  const isSelected = selectedDonor && donorKey(selectedDonor) === id
+                  const displayName =
+                    donor.fullName?.trim() ||
+                    `${donor.firstName || ''} ${donor.lastName || ''}`.trim() ||
+                    'Donor'
+                  return (
+                    <li key={id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDonor(donor)}
+                        className={`w-full rounded-xl border p-3 text-left transition-all sm:p-4 ${
+                          isSelected
+                            ? 'border-primary bg-primary/8 ring-2 ring-primary/25'
+                            : 'border-border bg-card hover:border-primary/40 hover:bg-muted/40'
+                        }`}
+                      >
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-foreground">{displayName}</span>
+                              <Badge className={getBloodTypeBadge(donor.bloodType)}>{donor.bloodType}</Badge>
+                            </div>
+                            <p className="mt-1 break-all text-sm text-muted-foreground">{donor.email}</p>
+                            <p className="break-all text-sm text-muted-foreground">{donor.phone}</p>
+                            {donor.lastDonationDate && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Last donation: {new Date(donor.lastDonationDate).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-left sm:text-right">
+                            <p className={`text-sm font-medium ${eligibility.color}`}>{eligibility.text}</p>
+                            {donor.totalDonations > 0 && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {donor.totalDonations} donation{donor.totalDonations !== 1 ? 's' : ''}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-600">{donor.email}</p>
-                        <p className="text-sm text-gray-600">{donor.phone}</p>
-                        {donor.lastDonationDate && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            Last donation: {new Date(donor.lastDonationDate).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-medium ${eligibility.color}`}>
-                          {eligibility.text}
-                        </p>
-                        {donor.totalDonations > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {donor.totalDonations} donation{donor.totalDonations !== 1 ? 's' : ''}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-4 border-t border-border">
-            <Button variant="outline" onClick={onClose} className="flex-1">
+          <DialogFooter className="shrink-0 gap-2 border-t bg-muted/40 px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={onClose}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleSelect} 
+            <Button
+              type="button"
+              className="w-full bg-gradient-to-r from-slate-700 to-slate-900 hover:from-slate-800 hover:to-black sm:w-auto"
+              onClick={handleSelect}
               disabled={!selectedDonor}
-              className="flex-1"
             >
-              Select Donor
+              Use selected donor
             </Button>
-          </div>
+          </DialogFooter>
         </div>
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

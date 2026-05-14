@@ -48,44 +48,35 @@ export async function GET(request, { params }) {
       }
     }
 
-    // Get registered donors for this drive
-    const Donor = (await import('@/lib/models/Donor')).default
-    
-    console.log('[Drive API] Looking for donors with driveToken:', drive.registrationToken)
-    
-    let registeredDonors = await Donor.find({ driveToken: drive.registrationToken })
-      .select('firstName lastName email phone bloodType status registeredAt')
-      .sort({ registeredAt: -1 })
+    const DriveParticipant = (await import('@/lib/models/DriveParticipant')).default
+    const { backfillParticipantsFromLegacyDonors } = await import('@/lib/drive-participant-helpers')
+
+    await backfillParticipantsFromLegacyDonors(drive)
+
+    const participants = await DriveParticipant.find({ driveId: drive._id })
+      .populate('donorId', 'firstName lastName email phone bloodType status registeredAt')
+      .sort({ createdAt: -1 })
       .lean()
 
-    console.log('[Drive API] Found', registeredDonors.length, 'registered donors for drive', drive.name)
-    
-    // If no donors found with driveToken, try other field mappings
-    if (registeredDonors.length === 0) {
-      console.log('[Drive API] No donors found with driveToken, trying driveId...')
-      registeredDonors = await Donor.find({ driveId: drive._id })
-        .select('firstName lastName email phone bloodType status registeredAt')
-        .sort({ registeredAt: -1 })
-        .lean()
-      console.log('[Drive API] Found', registeredDonors.length, 'registered donors with driveId')
-    }
-    
-    // If still no donors, try a broader search to debug
-    if (registeredDonors.length === 0) {
-      console.log('[Drive API] No donors found, checking all recent donors...')
-      const allRecentDonors = await Donor.find({ 
-        registeredAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Last 24 hours
+    const registrations = participants
+      .filter((p) => p.donorId)
+      .map((p) => {
+        const d = p.donorId
+        return {
+          id: p._id.toString(),
+          donorId: d._id.toString(),
+          fullName: `${d.firstName} ${d.lastName}`,
+          email: d.email,
+          phone: d.phone,
+          bloodType: d.bloodType,
+          status: p.status,
+          source: p.source,
+          registeredAt: p.createdAt || d.registeredAt,
+          notes: p.notes || '',
+        }
       })
-        .select('firstName lastName email phone bloodType status registeredAt driveToken driveId')
-        .sort({ registeredAt: -1 })
-        .limit(5)
-        .lean()
-      console.log('[Drive API] Recent donors found:', allRecentDonors.length)
-      console.log('[Drive API] Sample recent donor:', allRecentDonors[0] || 'No recent donors')
-    }
-    
-    console.log('[Drive API] Final donor count:', registeredDonors.length)
-    console.log('[Drive API] Sample donor data:', registeredDonors[0] || 'No donors found')
+
+    console.log('[Drive API] Participants for drive', drive.name, ':', registrations.length)
 
     // Return drive details with registrations
     return NextResponse.json({
@@ -108,16 +99,7 @@ export async function GET(request, { params }) {
         status: drive.status,
         stats: drive.stats,
         organization: drive.organizationId,
-        registrations: registeredDonors.map(donor => ({
-          id: donor._id.toString(),
-          fullName: `${donor.firstName} ${donor.lastName}`,
-          email: donor.email,
-          phone: donor.phone,
-          bloodType: donor.bloodType,
-          status: donor.status,
-          registeredAt: donor.registeredAt,
-          notes: donor.medicalConditions || '',
-        })),
+        registrations,
       },
     })
   } catch (error) {
@@ -192,6 +174,15 @@ export async function PUT(request, { params }) {
       }
       
       await drive.save()
+
+      if (body.action === 'activate' && process.env.DRIVE_OUTREACH_ON_ACTIVATE !== 'false') {
+        const { after } = await import('next/server')
+        const idStr = drive._id.toString()
+        after(async () => {
+          const { runDriveActivationOutreachJob } = await import('@/lib/drive-outreach')
+          await runDriveActivationOutreachJob(idStr)
+        })
+      }
       
       return NextResponse.json({
         success: true,
@@ -199,10 +190,22 @@ export async function PUT(request, { params }) {
         data: {
           id: drive._id.toString(),
           name: drive.name,
+          description: drive.description,
+          date: drive.date,
+          startTime: drive.startTime,
+          endTime: drive.endTime,
+          location: drive.location,
+          address: drive.address,
+          city: drive.city,
+          targetDonors: drive.targetDonors,
+          whatsappGroupLink: drive.whatsappGroupLink || '',
           status: drive.status,
           isActive: drive.isActive,
           registrationToken: drive.registrationToken,
           registrationUrl: drive.registrationUrl,
+          stats: drive.stats,
+          outreachScheduled:
+            body.action === 'activate' && process.env.DRIVE_OUTREACH_ON_ACTIVATE !== 'false',
         },
       })
     }
@@ -272,6 +275,12 @@ export async function DELETE(request, { params }) {
         { status: 403 }
       )
     }
+
+    const DriveParticipant = (await import('@/lib/models/DriveParticipant')).default
+    await DriveParticipant.deleteMany({ driveId: id })
+
+    const RsvpSmsLink = (await import('@/lib/models/RsvpSmsLink')).default
+    await RsvpSmsLink.deleteMany({ driveId: id })
 
     await DonationDrive.deleteOne({ _id: id })
 

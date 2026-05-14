@@ -228,11 +228,61 @@ export async function POST(request) {
 
     if (existingDonor) {
       console.log('[Register API] Duplicate donor found:', existingDonor._id)
+
+      const DriveParticipant = (await import('@/lib/models/DriveParticipant')).default
+      const participant = await DriveParticipant.findOne({
+        donorId: existingDonor._id,
+        driveId: drive._id,
+      })
+        .select('status source')
+        .lean()
+
+      const { createDriveRsvpToken, buildRsvpUrl } = await import('@/lib/rsvp-jwt')
+      const { getOrCreateRsvpSmsLink } = await import('@/lib/rsvp-sms-link')
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      let rsvpUrl = null
+      let rsvpShortUrl = null
+      try {
+        const rsvpToken = await createDriveRsvpToken(String(existingDonor._id), String(drive._id))
+        rsvpUrl = buildRsvpUrl(rsvpToken, appUrl)
+        const short = await getOrCreateRsvpSmsLink(String(existingDonor._id), String(drive._id))
+        rsvpShortUrl = short.url
+      } catch (e) {
+        console.warn('[Register API] Could not build RSVP URL:', e.message)
+      }
+
+      const profileUrl = existingDonor.donorToken
+        ? `${appUrl}/donor/${existingDonor.donorToken}`
+        : null
+
+      let message =
+        "You're already a donor with this organization. You don't need a new registration — confirm this drive with your personal RSVP link, or open your donor profile."
+
+      if (participant) {
+        if (participant.status === 'declined') {
+          message =
+            "We found your profile. You previously indicated you couldn't attend this drive — you can update your response using the RSVP link below."
+        } else if (['registered', 'confirmed', 'checked_in'].includes(participant.status)) {
+          message =
+            "You're already on the roster for this drive. Use your donor profile or the RSVP page to review details — no second registration is needed."
+        } else if (participant.status === 'completed') {
+          message =
+            'Our records show you already completed this drive. Open your donor profile for your history and next eligible date.'
+        }
+      }
+
       return NextResponse.json(
-        { 
-          error: 'You are already registered with this email or phone',
+        {
+          error: 'Already a donor',
           duplicate: true,
+          sameDrive: true,
+          message,
+          participantStatus: participant?.status || null,
+          rsvpUrl,
+          rsvpShortUrl,
+          profileUrl,
           donorId: existingDonor._id.toString(),
+          donorToken: existingDonor.donorToken || null,
         },
         { status: 409 }
       )
@@ -286,20 +336,16 @@ export async function POST(request) {
     const donor = await Donor.create(donorData)
 
     console.log('[Register API] Donor created successfully:', donor._id)
-    console.log('[Register API] Donor driveToken:', donor.driveToken)
-    console.log('[Register API] Donor donorToken:', donor.donorToken)
-    console.log('[Register API] Donor driveId:', donor.driveId)
+
+    const { upsertParticipant } = await import('@/lib/drive-participant-helpers')
+    await upsertParticipant(drive._id, donor._id, { source: 'public', status: 'registered' })
 
     // Mark verification token as used
     await VerificationToken.useToken(verificationToken)
     console.log('[Register API] Verification token marked as used')
 
-    // Update drive stats
-    if (drive.stats) {
-      drive.stats.registrations = (drive.stats.registrations || 0) + 1
-      await drive.save()
-      console.log('[Register API] Drive stats updated:', drive.stats.registrations)
-    }
+    await VerificationToken.useToken(verificationToken)
+    console.log('[Register API] Verification token marked as used')
 
     const duration = Date.now() - startTime
     console.log('[Register API] Registration completed successfully in', duration, 'ms')

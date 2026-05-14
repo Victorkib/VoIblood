@@ -8,6 +8,11 @@ import { Plus, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/components/auth/auth-provider'
 import { RecordCollectionModal } from '@/components/modals/record-collection-modal'
+import {
+  InventoryListAuthSkeleton,
+  InventoryStatsSkeleton,
+  InventoryTableSkeleton,
+} from '@/components/dashboard/inventory-skeletons'
 
 export default function InventoryPage() {
   const router = useRouter()
@@ -161,31 +166,9 @@ export default function InventoryPage() {
     setIsModalOpen(false)
   }
 
-  // Show loading while auth is initializing or data is loading
-  if (authLoading || loading) {
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Blood Inventory</h1>
-            <p className="mt-2 text-foreground/60">Track all blood units and stock levels</p>
-          </div>
-          <Button className="gap-2" disabled>
-            <Plus className="w-4 h-4" />
-            Record Collection
-          </Button>
-        </div>
-
-        {/* Loading skeleton */}
-        <Card className="overflow-hidden">
-          <div className="p-6 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-4 border-primary mx-auto mb-4"></div>
-            <p className="text-foreground/60">Loading inventory...</p>
-          </div>
-        </Card>
-      </div>
-    )
+  // Auth: full skeleton shell (no user yet)
+  if (authLoading) {
+    return <InventoryListAuthSkeleton />
   }
 
   if (!user) {
@@ -220,7 +203,7 @@ export default function InventoryPage() {
       />
 
       {/* Summary Cards */}
-      {stats && (
+      {stats ? (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[
             { label: 'Total Units', value: stats.inventory.totalUnits, color: 'bg-secondary/10 text-secondary' },
@@ -234,6 +217,8 @@ export default function InventoryPage() {
             </Card>
           ))}
         </div>
+      ) : (
+        <InventoryStatsSkeleton />
       )}
 
       {/* Search and Filter */}
@@ -259,38 +244,9 @@ export default function InventoryPage() {
         </Card>
       )}
 
-      {loading && (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-border bg-secondary/5">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Unit ID</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Blood Type</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Collection Date</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Expiry Date</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {[1, 2, 3, 4, 5].map((idx) => (
-                  <tr key={idx} className="hover:bg-secondary/5 transition">
-                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24 animate-pulse"></div></td>
-                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div></td>
-                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28 animate-pulse"></div></td>
-                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28 animate-pulse"></div></td>
-                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div></td>
-                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {!loading && !error && (
+      {loading ? (
+        <InventoryTableSkeleton rows={8} />
+      ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">

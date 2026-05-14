@@ -9,7 +9,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,11 +26,13 @@ import {
   Award,
   Clock,
   AlertCircle,
+  MapPin,
+  ExternalLink,
+  Sparkles,
 } from 'lucide-react'
 
 export default function DonorProfilePage() {
   const params = useParams()
-  const router = useRouter()
   const [donor, setDonor] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -124,6 +126,24 @@ export default function DonorProfilePage() {
   const age = donor.dateOfBirth
     ? new Date().getFullYear() - new Date(donor.dateOfBirth).getFullYear()
     : null
+
+  const upcoming = donor.upcomingDriveParticipations || []
+  const otherDrives = (donor.driveParticipations || []).filter(
+    (p) => !upcoming.some((u) => u.driveId === p.driveId)
+  ).slice(0, 8)
+
+  const formatParticipantStatus = (s) => {
+    const map = {
+      registered: 'Registered',
+      confirmed: 'Confirmed',
+      checked_in: 'Checked in',
+      declined: 'Declined RSVP',
+      completed: 'Completed',
+      no_show: 'No show',
+      cancelled: 'Cancelled',
+    }
+    return map[s] || (s ? String(s).replace(/_/g, ' ') : '')
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-white py-12 px-4">
@@ -263,6 +283,124 @@ export default function DonorProfilePage() {
             </div>
           </Card>
         </div>
+
+        {/* Blood drives you're connected to */}
+        {(upcoming.length > 0 || otherDrives.length > 0) && (
+          <Card className="mb-8 overflow-hidden border-rose-100 shadow-md">
+            <div className="h-1.5 w-full bg-gradient-to-r from-rose-600 via-red-500 to-amber-400" />
+            <div className="p-6 md:p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 rounded-xl bg-rose-100 flex items-center justify-center">
+                  <Calendar className="w-6 h-6 text-rose-700" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Your blood drives</h3>
+                  <p className="text-sm text-gray-600 mt-0.5">
+                    RSVPs and registrations tied to your donor record
+                  </p>
+                </div>
+              </div>
+
+              {upcoming.length > 0 && (
+                <div className="mb-8">
+                  <p className="text-xs font-bold uppercase tracking-widest text-rose-800/70 mb-3">
+                    Upcoming & active
+                  </p>
+                  <div className="grid gap-4">
+                    {upcoming.map((p) => (
+                      <div
+                        key={p.driveId}
+                        className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50/80 to-white p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+                      >
+                        <div className="space-y-2 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-semibold text-gray-900 text-lg">{p.driveName}</h4>
+                            {p.source === 'outreach' && (
+                              <span className="inline-flex items-center text-xs font-medium text-rose-800 bg-rose-100 border border-rose-200 rounded-full px-2.5 py-0.5">
+                                <Sparkles className="w-3 h-3 mr-1" />
+                                RSVP
+                              </span>
+                            )}
+                            <span className="text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-full px-2.5 py-0.5">
+                              {formatParticipantStatus(p.participantStatus)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 flex items-center gap-2">
+                            <Calendar className="w-4 h-4 shrink-0 text-rose-600" />
+                            {p.driveDate ? new Date(p.driveDate).toLocaleDateString(undefined, {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            }) : ''}
+                            {(p.startTime || p.endTime) && (
+                              <span className="text-gray-500">
+                                · {[p.startTime, p.endTime].filter(Boolean).join(' – ')}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-sm text-gray-600 flex items-start gap-2">
+                            <MapPin className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                            <span>
+                              {p.location}
+                              {p.city ? `, ${p.city}` : ''}
+                            </span>
+                          </p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                          {!!(p.rsvpShortUrl || p.rsvpUrl) && (
+                            <Button
+                              size="sm"
+                              className="bg-rose-600 hover:bg-rose-700"
+                              onClick={() => window.open(p.rsvpShortUrl || p.rsvpUrl, '_blank')}
+                            >
+                              <ExternalLink className="w-4 h-4 mr-2" />
+                              RSVP page
+                            </Button>
+                          )}
+                          {p.registrationUrl && (
+                            <Button size="sm" variant="outline" className="border-rose-200" onClick={() => window.open(p.registrationUrl, '_blank')}>
+                              Public link
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {otherDrives.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">
+                    Recent & other drives
+                  </p>
+                  <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/50">
+                    {otherDrives.map((p) => (
+                      <li key={p.driveId} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div>
+                          <p className="font-medium text-gray-900">{p.driveName}</p>
+                          <p className="text-xs text-gray-500">
+                            {p.driveDate ? new Date(p.driveDate).toLocaleDateString() : ''}
+                            {' · '}
+                            {formatParticipantStatus(p.participantStatus)}
+                            {p.driveStatus ? ` · Drive ${p.driveStatus}` : ''}
+                          </p>
+                        </div>
+                        {!!(p.rsvpShortUrl || p.rsvpUrl) && (
+                          <Button size="sm" variant="ghost" className="text-rose-700 shrink-0" onClick={() => window.open(p.rsvpShortUrl || p.rsvpUrl, '_blank')}>
+                            Open RSVP
+                            <ExternalLink className="w-3 h-3 ml-1" />
+                          </Button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Medical Information */}
         {(donor.medicalConditions || donor.medications) && (

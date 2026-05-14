@@ -8,6 +8,7 @@ import { connectDB } from '@/lib/db'
 import BloodInventory from '@/lib/models/BloodInventory'
 import Organization from '@/lib/models/Organization'
 import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
+import { sendPostDonationHealthEmail } from '@/lib/email-service'
 
 /**
  * GET /api/inventory
@@ -143,7 +144,37 @@ export async function POST(request) {
       component = 'whole_blood',
       technician,
       notes,
+      testResults = {},
+      eligibilityStatus = 'pending',
+      bloodWorkFindings = '',
+      recommendations = '',
     } = body
+    const normalizedScreening = {
+      hiv: testResults?.hiv || 'pending',
+      hepatitisB: testResults?.hepatitisB || 'pending',
+      hepatitisC: testResults?.hepatitisC || 'pending',
+      syphilis: testResults?.syphilis || 'pending',
+    }
+
+    const positiveFindingDetected = Object.values(normalizedScreening).some((value) => value === 'positive')
+    const pendingFindingDetected = Object.values(normalizedScreening).some((value) => value === 'pending' || value === 'inconclusive')
+    const aggregateResult = pendingFindingDetected
+      ? 'pending'
+      : positiveFindingDetected
+        ? 'positive'
+        : 'negative'
+
+    const normalizedEligibilityStatus = ['eligible', 'temporarily_deferred', 'ineligible', 'pending'].includes(eligibilityStatus)
+      ? eligibilityStatus
+      : 'pending'
+
+    const bloodWorkSummary = [
+      `HIV: ${normalizedScreening.hiv}`,
+      `Hepatitis B: ${normalizedScreening.hepatitisB}`,
+      `Hepatitis C: ${normalizedScreening.hepatitisC}`,
+      `Syphilis: ${normalizedScreening.syphilis}`,
+    ].join(', ')
+
 
     // Auto-generate unitId if not provided
     const finalUnitId = unitId || `UNIT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
@@ -197,15 +228,72 @@ export async function POST(request) {
       unitId: finalUnitId,
       expiryDate: finalExpiryDate,
       status: 'available',
+      testedFor: {
+        hiv: true,
+        hepatitisB: true,
+        hepatitisC: true,
+        syphilis: true,
+        testDate: collectionDate,
+        testResults: aggregateResult,
+      },
+      qualityNotes: bloodWorkFindings || undefined,
     })
 
     // If donorId provided, update donor's last donation date
     if (donorId) {
       const Donor = (await import('@/lib/models/Donor')).default
-      await Donor.findByIdAndUpdate(donorId, {
-        lastDonationDate: collectionDate,
-        $inc: { totalDonations: 1 },
-      })
+      const donorDoc = await Donor.findById(donorId)
+      if (donorDoc) {
+        const donationDateObj = new Date(collectionDate)
+        const nextEligibleDate = new Date(donationDateObj)
+        nextEligibleDate.setDate(nextEligibleDate.getDate() + 56)
+
+        const historyPush = {
+          date: donationDateObj,
+          driveId: driveId || undefined,
+          driveName: driveName || undefined,
+          volume,
+          bloodType,
+          unitId: finalUnitId,
+          eligibilityStatus: normalizedEligibilityStatus,
+          bloodWorkSummary,
+          notes,
+        }
+
+        const newTotal = (donorDoc.totalDonations || 0) + 1
+
+        await Donor.updateOne(
+          { _id: donorDoc._id },
+          {
+            $set: {
+              lastDonationDate: donationDateObj,
+              nextEligibleDate,
+              totalDonations: newTotal,
+              status: 'completed',
+            },
+            $push: { donationHistory: historyPush },
+          }
+        )
+
+        try {
+          if (donorDoc.email) {
+            await sendPostDonationHealthEmail({
+              to: donorDoc.email,
+              donorName: `${donorDoc.firstName} ${donorDoc.lastName}`,
+              subject: `🧪 Your Donation Health Update${driveName ? ` - ${driveName}` : ''}`,
+              driveName,
+              donationDate: donationDateObj,
+              nextEligibleDate: nextEligibleDate.toLocaleDateString(),
+              bloodWorkStatus: normalizedEligibilityStatus,
+              bloodWorkFindings: bloodWorkFindings || bloodWorkSummary,
+              recommendations,
+              unitId: finalUnitId,
+            })
+          }
+        } catch (notificationError) {
+          console.warn('[Inventory API] Post-donation email failed:', notificationError.message)
+        }
+      }
     }
 
     // Update organization stock levels

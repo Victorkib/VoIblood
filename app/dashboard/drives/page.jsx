@@ -40,6 +40,7 @@ import {
   Link as LinkIcon,
   CheckCircle,
   Loader2,
+  Heart,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -58,6 +59,8 @@ export default function DrivesPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+  /** Drive shown in the share-links modal (separate from selectedDrive so activate/delete flows do not clobber it). */
+  const [driveForShare, setDriveForShare] = useState(null)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isActivateModalOpen, setIsActivateModalOpen] = useState(false)
   const [selectedDrive, setSelectedDrive] = useState(null)
@@ -137,7 +140,7 @@ export default function DrivesPage() {
         setIsModalOpen(false)
         fetchDrives()
         // Open share modal with the new drive
-        setSelectedDrive(data.data)
+        setDriveForShare(data.data)
         setIsShareModalOpen(true)
         setTimeout(() => setActionSuccess(null), 3000)
       } else {
@@ -179,7 +182,8 @@ export default function DrivesPage() {
       if (res.ok) {
         if (actionMode === 'activate') {
           setActionSuccess('Drive activated!')
-          setSelectedDrive({ ...selectedDrive, ...data.data })
+          // Merge API fields (registrationUrl, token) with list row (whatsapp, date, etc.)
+          setDriveForShare({ ...selectedDrive, ...data.data })
           setIsShareModalOpen(true)
         } else {
           setActionSuccess('Drive deactivated')
@@ -533,52 +537,99 @@ export default function DrivesPage() {
       </Dialog>
 
       {/* Share Link Modal */}
-      <Dialog open={isShareModalOpen} onOpenChange={setIsShareModalOpen}>
+      <Dialog
+        open={isShareModalOpen}
+        onOpenChange={(open) => {
+          setIsShareModalOpen(open)
+          if (!open) setDriveForShare(null)
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Share Registration Link</DialogTitle>
             <DialogDescription>Share this link with potential donors</DialogDescription>
           </DialogHeader>
-          {selectedDrive && (
+          {driveForShare && (
             <div className="space-y-4">
+              {driveForShare.outreachScheduled && (
+                <div className="flex gap-3 rounded-lg border border-rose-200 bg-gradient-to-r from-rose-50 to-red-50 px-4 py-3 text-sm text-rose-950">
+                  <Heart className="w-5 h-5 shrink-0 text-rose-600 mt-0.5" aria-hidden />
+                  <div>
+                    <p className="font-semibold text-rose-900">Donor outreach is running</p>
+                    <p className="text-rose-900/90 mt-1 leading-relaxed">
+                      Eligible donors are receiving an invitation by email (and SMS when we have a mobile number).
+                      Donors who are not eligible yet get a supporter message with ways to help and their status on file.
+                      This happens in the background and may take a minute for large lists.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <h4 className="font-semibold text-blue-900 mb-2">{selectedDrive.name}</h4>
+                <h4 className="font-semibold text-blue-900 mb-2">{driveForShare.name}</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-blue-700" />
-                    <span>{new Date(selectedDrive.date).toLocaleDateString()}</span>
+                    <span>{new Date(driveForShare.date).toLocaleDateString()}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-blue-700" />
-                    <span>{selectedDrive.location}</span>
+                    <span>{driveForShare.location}</span>
                   </div>
                 </div>
               </div>
               <div>
                 <Label>Registration Link</Label>
                 <div className="flex gap-2 mt-2">
-                  <Input value={selectedDrive.registrationUrl} readOnly className="font-mono text-sm" />
-                  <Button size="sm" variant="outline" onClick={() => copyToClipboard(selectedDrive.registrationUrl)}>
+                  <Input value={driveForShare.registrationUrl || ''} readOnly className="font-mono text-sm" />
+                  <Button size="sm" variant="outline" onClick={() => copyToClipboard(driveForShare.registrationUrl)}>
                     <Copy className="w-4 h-4" />
                   </Button>
                 </div>
+                {!driveForShare.registrationUrl && (
+                  <p className="text-xs text-amber-700 mt-2">
+                    No registration URL yet. Activate the drive to generate the public link.
+                  </p>
+                )}
               </div>
-              {selectedDrive.whatsappGroupLink && (
+              {driveForShare.whatsappGroupLink ? (
                 <div>
                   <Label>WhatsApp Group Link</Label>
                   <div className="flex gap-2 mt-2">
-                    <Input value={selectedDrive.whatsappGroupLink} readOnly className="font-mono text-sm" />
-                    <Button size="sm" variant="outline" onClick={() => copyToClipboard(selectedDrive.whatsappGroupLink)}>
+                    <Input value={driveForShare.whatsappGroupLink} readOnly className="font-mono text-sm" />
+                    <Button size="sm" variant="outline" onClick={() => copyToClipboard(driveForShare.whatsappGroupLink)}>
                       <Copy className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No WhatsApp group link on this drive. Edit the drive to add one so donors can join for updates.
+                </p>
               )}
-              <div className="flex gap-2">
-                <Button className="flex-1" onClick={() => window.open(`https://wa.me/?text=Join%20our%20blood%20donation%20drive!%20${selectedDrive.registrationUrl}`, '_blank')}>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  className="flex-1"
+                  disabled={!driveForShare.registrationUrl}
+                  onClick={() =>
+                    window.open(
+                      `https://wa.me/?text=${encodeURIComponent(`Join our blood donation drive: ${driveForShare.name || ''}\n${driveForShare.registrationUrl}`)}`,
+                      '_blank'
+                    )
+                  }
+                >
                   <Share2 className="w-4 h-4 mr-2" />
-                  Share to WhatsApp
+                  Share registration via WhatsApp
                 </Button>
+                {driveForShare.whatsappGroupLink && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => window.open(driveForShare.whatsappGroupLink, '_blank')}
+                  >
+                    Open WhatsApp group
+                  </Button>
+                )}
               </div>
             </div>
           )}

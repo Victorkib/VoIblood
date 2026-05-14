@@ -1,11 +1,5 @@
 /**
- * POST /api/admin/drives/[id]/registrations/[registrationId]/finalize-checkin
- * 
- * Finalizes donor check-in at a drive.
- * The donor already exists from registration - this just ensures they're
- * properly linked to the organization and marks them as checked_in.
- * 
- * This is called when admin marks a volunteer as "Checked In" at the drive.
+ * POST .../finalize-checkin — mark participant (and donor context) as checked_in.
  */
 
 import { NextResponse } from 'next/server'
@@ -14,87 +8,59 @@ import Donor from '@/lib/models/Donor'
 import DonationDrive from '@/lib/models/DonationDrive'
 import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
+import {
+  recountDriveParticipantStats,
+  resolveParticipantForAdmin,
+  syncDonorWithParticipant,
+} from '@/lib/drive-participant-helpers'
 
 export async function POST(request, { params }) {
   try {
     await connectDB()
 
-    // Unwrap params (Next.js 15+ requirement)
     const resolvedParams = await params
     const { id: driveId, registrationId } = resolvedParams
 
-    // Get user from session
     const user = await getCurrentUser(request.cookies)
     if (!user || (!isSuperAdmin(user.role) && !isOrgAdmin(user.role))) {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    // Get the drive
     const drive = await DonationDrive.findById(driveId)
     if (!drive) {
-      return NextResponse.json(
-        { error: 'Drive not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Drive not found' }, { status: 404 })
     }
 
-    // Check permissions
     if (!isSuperAdmin(user.role) && drive.organizationId.toString() !== user.organizationId) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    // Find the donor registration
-    const donor = await Donor.findById(registrationId)
-    if (!donor) {
-      return NextResponse.json(
-        { error: 'Donor registration not found' },
-        { status: 404 }
-      )
+    const participant = await resolveParticipantForAdmin(drive, registrationId)
+    if (!participant) {
+      return NextResponse.json({ error: 'Donor registration not found' }, { status: 404 })
     }
 
-    // Verify donor belongs to this drive
-    if (donor.driveToken !== drive.registrationToken) {
-      return NextResponse.json(
-        { error: 'Donor does not belong to this drive' },
-        { status: 400 }
-      )
+    participant.status = 'checked_in'
+    await participant.save()
+
+    const donor = await Donor.findById(participant.donorId._id || participant.donorId)
+    if (donor) {
+      await syncDonorWithParticipant(donor, participant, drive)
     }
 
-    // Update donor status to checked_in
-    donor.status = 'checked_in'
-    
-    // Ensure organizationId is set (should already be from registration)
-    if (!donor.organizationId) {
-      donor.organizationId = drive.organizationId
-    }
-
-    // Ensure driveId is set
-    if (!donor.driveId) {
-      donor.driveId = drive._id
-    }
-
-    await donor.save()
+    await recountDriveParticipantStats(drive._id)
 
     return NextResponse.json({
       success: true,
       message: 'Donor checked in successfully',
       data: {
-        donorId: donor._id.toString(),
-        status: donor.status,
-        organizationId: donor.organizationId.toString(),
+        participantId: participant._id.toString(),
+        donorId: donor?._id?.toString(),
+        status: participant.status,
       },
     })
   } catch (error) {
-    console.error('POST /api/admin/drives/[id]/registrations/[id]/finalize-checkin error:', error)
-    return NextResponse.json(
-      { error: 'Failed to finalize check-in' },
-      { status: 500 }
-    )
+    console.error('POST finalize-checkin error:', error)
+    return NextResponse.json({ error: 'Failed to finalize check-in' }, { status: 500 })
   }
 }
