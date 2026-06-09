@@ -27,6 +27,7 @@ export default function RequestsPage() {
     pending: { label: 'Pending', color: 'bg-primary/10 text-primary' },
     approved: { label: 'Approved', color: 'bg-accent/10 text-accent' },
     partially_fulfilled: { label: 'Partially Fulfilled', color: 'bg-secondary/10 text-secondary' },
+    ready_for_delivery: { label: 'Ready for Delivery', color: 'bg-purple-500/10 text-purple-700' },
     fulfilled: { label: 'Fulfilled', color: 'bg-green-500/10 text-green-700' },
     rejected: { label: 'Rejected', color: 'bg-destructive/10 text-destructive' },
     cancelled: { label: 'Cancelled', color: 'bg-foreground/10 text-foreground' },

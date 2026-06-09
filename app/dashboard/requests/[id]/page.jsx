@@ -29,6 +29,8 @@ import { Input } from '@/components/ui/input'
 const statusConfig = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
   approved: { label: 'Approved', color: 'bg-blue-100 text-blue-800', icon: CheckCircle },
+  partially_fulfilled: { label: 'Partially Fulfilled', color: 'bg-indigo-100 text-indigo-800', icon: Activity },
+  ready_for_delivery: { label: 'Ready for Delivery', color: 'bg-purple-100 text-purple-800', icon: CheckCircle },
   fulfilled: { label: 'Fulfilled', color: 'bg-green-100 text-green-800', icon: CheckCircle },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800', icon: XCircle },
   cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800', icon: XCircle },
@@ -223,7 +225,8 @@ export default function RequestDetailsPage() {
             )}
 
             {request.canActAsSupplier &&
-              ['approved', 'partially_fulfilled', 'pending'].includes(request.status) && (
+              ['approved', 'partially_fulfilled', 'pending'].includes(request.status) &&
+              request.status !== 'ready_for_delivery' && (
                 <div className="space-y-3 border rounded-lg p-3">
                   <p className="text-sm font-medium">Allocate units</p>
                   <div className="max-h-48 overflow-auto space-y-2">
@@ -259,29 +262,34 @@ export default function RequestDetailsPage() {
                     </Button>
                     <Button
                       onClick={() => callAction('fulfill')}
-                      disabled={actionLoading}
+                      disabled={actionLoading || (request.allocatedUnits?.length || 0) === 0}
                     >
-                      Mark fulfilled
+                      Ready for delivery
                     </Button>
                   </div>
                 </div>
               )}
 
-            {request.canActAsSupplier && request.status === 'fulfilled' && (
-              <div className="flex gap-2 items-end">
-                <div className="flex-1">
-                  <Input
-                    value={deliveredBy}
-                    onChange={(e) => setDeliveredBy(e.target.value)}
-                    placeholder="Delivered by"
-                  />
+            {request.canActAsSupplier && request.status === 'ready_for_delivery' && (
+              <div className="space-y-3 border rounded-lg p-3 border-purple-200 bg-purple-50/50">
+                <p className="text-sm font-medium text-purple-900">
+                  Units are packed and ready. Confirm delivery to transfer inventory to the requesting organization.
+                </p>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Input
+                      value={deliveredBy}
+                      onChange={(e) => setDeliveredBy(e.target.value)}
+                      placeholder="Delivered by (name or courier)"
+                    />
+                  </div>
+                  <Button
+                    onClick={() => callAction('deliver', { deliveredBy })}
+                    disabled={actionLoading || !deliveredBy.trim()}
+                  >
+                    Confirm delivery
+                  </Button>
                 </div>
-                <Button
-                  onClick={() => callAction('deliver', { deliveredBy })}
-                  disabled={actionLoading || !deliveredBy.trim()}
-                >
-                  Mark delivered
-                </Button>
               </div>
             )}
 
@@ -490,7 +498,7 @@ export default function RequestDetailsPage() {
         </Card>
       )}
 
-      {(request.fulfilledDate || request.deliveredDate) && (
+      {((request.allocatedUnits?.length || 0) > 0 || request.fulfilledDate || request.deliveredDate) && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -503,7 +511,7 @@ export default function RequestDetailsPage() {
               {request.allocatedUnits?.length || 0} allocated unit(s) transferred from{' '}
               <strong>{request.sourceOrganizationName || 'source organization'}</strong> to{' '}
               <strong>{request.requestingOrganizationName || 'requesting organization'}</strong>{' '}
-              when this request was marked fulfilled.
+              when delivery was confirmed.
             </p>
             {request.deliveredDate ? (
               <p>

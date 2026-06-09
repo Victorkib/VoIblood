@@ -15,7 +15,9 @@ export default function ReportsPage() {
   const [reportType, setReportType] = useState('inventory')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [format, setFormat] = useState('pdf')
+  const [format, setFormat] = useState('csv')
+  const [downloadLoading, setDownloadLoading] = useState(false)
+  const [downloadError, setDownloadError] = useState(null)
   const { user } = useAuth()
   const organizationId = useOrganizationId()
   const orgType = user?.organizationType || 'blood_bank'
@@ -88,14 +90,21 @@ export default function ReportsPage() {
     },
   ]
 
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (typeOverride) => {
     try {
       if (!user) return
+      if (!organizationId) {
+        setDownloadError('No organization selected. Choose an organization context and try again.')
+        return
+      }
 
-      const organizationId = user.organizationId || user.id
+      const selectedType = typeOverride || reportType
+      setDownloadLoading(true)
+      setDownloadError(null)
+
       const params = new URLSearchParams({
         organizationId,
-        reportType,
+        reportType: selectedType,
         startDate: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         endDate: endDate || new Date().toISOString().split('T')[0],
         format,
@@ -104,21 +113,31 @@ export default function ReportsPage() {
       const response = await fetch(`/api/reports/export?${params}`)
 
       if (!response.ok) {
-        throw new Error('Failed to generate report')
+        let message = 'Failed to generate report'
+        try {
+          const errData = await response.json()
+          message = errData.message || message
+        } catch {
+          // response may not be JSON
+        }
+        throw new Error(message)
       }
 
       const blob = await response.blob()
+      const extension = format === 'pdf' ? 'pdf' : format === 'xlsx' ? 'xlsx' : 'csv'
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `report-${reportType}-${new Date().toISOString().split('T')[0]}.${format === 'pdf' ? 'pdf' : format === 'csv' ? 'csv' : 'xlsx'}`
+      a.download = `report-${selectedType}-${new Date().toISOString().split('T')[0]}.${extension}`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
     } catch (err) {
       console.error('[v0] Generate report error:', err)
-      alert(`Error: ${err.message}`)
+      setDownloadError(err.message)
+    } finally {
+      setDownloadLoading(false)
     }
   }
 
@@ -140,6 +159,12 @@ export default function ReportsPage() {
       {error && (
         <Card className="p-6 border-red-500/50 bg-red-500/5">
           <p className="text-red-600">Error: {error}</p>
+        </Card>
+      )}
+
+      {downloadError && (
+        <Card className="p-6 border-red-500/50 bg-red-500/5">
+          <p className="text-red-600">Download error: {downloadError}</p>
         </Card>
       )}
 
@@ -196,9 +221,19 @@ export default function ReportsPage() {
               </div>
               <h3 className="font-semibold text-foreground mb-2">{report.title}</h3>
               <p className="text-sm text-foreground/60 mb-4">{report.description}</p>
-              <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => setReportType(report.key)}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                disabled={downloadLoading}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setReportType(report.key)
+                  handleGenerateReport(report.key)
+                }}
+              >
                 <Download className="w-4 h-4" />
-                Generate
+                {downloadLoading ? 'Generating...' : 'Download'}
               </Button>
             </Card>
           )
@@ -256,9 +291,9 @@ export default function ReportsPage() {
               </select>
             </div>
           </div>
-          <Button className="w-full gap-2" onClick={handleGenerateReport}>
+          <Button className="w-full gap-2" onClick={() => handleGenerateReport()} disabled={downloadLoading || !organizationId}>
             <Calendar className="w-4 h-4" />
-            Generate Custom Report
+            {downloadLoading ? 'Generating report...' : 'Download Custom Report'}
           </Button>
         </div>
       </Card>

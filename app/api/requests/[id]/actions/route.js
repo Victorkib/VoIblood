@@ -285,12 +285,7 @@ export async function POST(request, { params }) {
         }
         // Fulfillment is finalized only at delivery confirmation.
         // Keep this action as a readiness checkpoint.
-        if (!['approved', 'partially_fulfilled', 'pending'].includes(req.status)) {
-          return NextResponse.json(
-            { error: `Request cannot be prepared for delivery from status "${req.status}"` },
-            { status: 400 }
-          )
-        }
+        await req.markReadyForDelivery()
         message = 'Request is ready for delivery. Confirm delivery to complete fulfillment.'
         result = req
         break
@@ -298,6 +293,12 @@ export async function POST(request, { params }) {
       case 'deliver':
         if (!canAsSupplier || !supplierAllowed) {
           return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+        }
+        if (req.status !== 'ready_for_delivery') {
+          return NextResponse.json(
+            { error: 'Request must be marked ready for delivery before confirming delivery' },
+            { status: 400 }
+          )
         }
         const { deliveredBy } = actionData
         if (!deliveredBy) {

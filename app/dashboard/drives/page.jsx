@@ -423,7 +423,12 @@ export default function DrivesPage() {
                             </DropdownMenuItem>
                           )}
                           {drive.registrationUrl && (
-                            <DropdownMenuItem onClick={() => { setSelectedDrive(drive); setIsShareModalOpen(true) }}>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setDriveForShare(drive)
+                                setIsShareModalOpen(true)
+                              }}
+                            >
                               <Share2 className="w-4 h-4 mr-2" />
                               Share Link
                             </DropdownMenuItem>
