@@ -21,6 +21,7 @@ const publicRoutes = [
   '/auth/callback',
   '/auth/forgot-password',
   '/auth/reset-password',
+  '/auth/setup-account',
   '/auth/verify-email',
   '/auth/invite',
   '/pending-approval',

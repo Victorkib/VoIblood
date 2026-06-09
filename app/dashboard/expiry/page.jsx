@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, Clock, CheckCircle } from 'lucide-react'
 import { useAuth } from '@/components/auth/auth-provider'
+import { OrgFeatureLayout } from '@/components/dashboard/org-route-guard'
+import { useOrganizationId } from '@/lib/dashboard/use-organization-id'
 
 export default function ExpiryPage() {
   const [allUnits, setAllUnits] = useState([])
@@ -12,13 +14,13 @@ export default function ExpiryPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const { user } = useAuth()
+  const organizationId = useOrganizationId()
 
   useEffect(() => {
     const fetchInventory = async () => {
       try {
-        if (!user) return
+        if (!user || !organizationId) return
 
-        const organizationId = user.organizationId || user.id
         const response = await fetch(`/api/inventory?organizationId=${organizationId}&limit=100`)
 
         if (!response.ok) throw new Error('Failed to fetch inventory')
@@ -39,14 +41,13 @@ export default function ExpiryPage() {
     }, 300)
 
     return () => clearTimeout(debounceTimer)
-  }, [user])
+  }, [user, organizationId])
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        if (!user) return
+        if (!user || !organizationId) return
 
-        const organizationId = user.organizationId || user.id
         const response = await fetch(`/api/dashboard/stats?organizationId=${organizationId}`)
 
         if (!response.ok) throw new Error('Failed to fetch stats')
@@ -59,7 +60,7 @@ export default function ExpiryPage() {
     }
 
     fetchStats()
-  }, [user])
+  }, [user, organizationId])
 
   const categorizeUnits = () => {
     const now = new Date()
@@ -122,10 +123,8 @@ export default function ExpiryPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-3xl font-bold text-foreground">Expiry Monitoring</h1>
-        <p className="text-foreground/60">Track and manage blood units approaching expiration</p>
-
+      <OrgFeatureLayout feature="expiry">
+        <div className="space-y-6">
         {/* Stats Cards Skeleton */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[1, 2, 3].map((idx) => (
@@ -171,20 +170,15 @@ export default function ExpiryPage() {
             </table>
           </div>
         </Card>
-      </div>
+        </div>
+      </OrgFeatureLayout>
     )
   }
 
   const { expired, critical, warning } = categorizeUnits()
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Expiry Monitoring</h1>
-        <p className="mt-2 text-foreground/60">Track and manage blood units approaching expiration</p>
-      </div>
-
+    <OrgFeatureLayout feature="expiry">
       {/* Alert Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="p-6 border-destructive/30 bg-destructive/5">
@@ -356,6 +350,6 @@ export default function ExpiryPage() {
           <p className="text-foreground/60">No blood units are expiring or expired in the monitored period.</p>
         </Card>
       )}
-    </div>
+    </OrgFeatureLayout>
   )
 }

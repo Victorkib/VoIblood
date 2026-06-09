@@ -53,6 +53,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { CreateOrganizationWizard } from '@/components/super-admin/create-organization-wizard'
 
 const ORGANIZATION_TYPES = [
   { value: 'blood_bank', label: 'Blood Bank' },
@@ -81,18 +82,6 @@ export default function OrganizationsPage() {
   const [selectedOrg, setSelectedOrg] = useState(null)
   
   // Create form
-  const [createForm, setCreateForm] = useState({
-    name: '',
-    type: 'blood_bank',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    country: 'United States',
-  })
-  
   // Edit form
   const [editForm, setEditForm] = useState({})
   
@@ -148,49 +137,6 @@ export default function OrganizationsPage() {
       setError('Failed to connect to server')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleCreate = async (e) => {
-    e.preventDefault()
-    setActionLoading(true)
-    setActionError(null)
-    setActionSuccess(null)
-    
-    try {
-      const res = await fetch('/api/admin/organizations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // CRITICAL: Send cookies (auth-session)
-        body: JSON.stringify(createForm),
-      })
-      
-      const data = await res.json()
-      
-      if (res.ok) {
-        setActionSuccess('Organization created successfully!')
-        setCreateForm({
-          name: '',
-          type: 'blood_bank',
-          email: '',
-          phone: '',
-          address: '',
-          city: '',
-          state: '',
-          zipCode: '',
-          country: 'United States',
-        })
-        setCreateModalOpen(false)
-        fetchOrganizations()
-        
-        setTimeout(() => setActionSuccess(null), 3000)
-      } else {
-        setActionError(data.error || 'Failed to create organization')
-      }
-    } catch (err) {
-      setActionError('Failed to create organization')
-    } finally {
-      setActionLoading(false)
     }
   }
 
@@ -503,127 +449,19 @@ export default function OrganizationsPage() {
         </CardContent>
       </Card>
 
-      {/* Create Modal */}
-      <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Organization</DialogTitle>
-            <DialogDescription>
-              Add a new organization to the platform
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="name">Organization Name *</Label>
-                <Input
-                  id="name"
-                  value={createForm.name}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, name: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="type">Type *</Label>
-                <Select
-                  value={createForm.type}
-                  onValueChange={(value) => setCreateForm(prev => ({ ...prev, type: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ORGANIZATION_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="email">Email *</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={createForm.email}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, email: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone *</Label>
-                <Input
-                  id="phone"
-                  value={createForm.phone}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, phone: e.target.value }))}
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="address">Address</Label>
-              <Textarea
-                id="address"
-                value={createForm.address}
-                onChange={(e) => setCreateForm(prev => ({ ...prev, address: e.target.value }))}
-                rows={2}
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="city">City</Label>
-                <Input
-                  id="city"
-                  value={createForm.city}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, city: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="state">State</Label>
-                <Input
-                  id="state"
-                  value={createForm.state}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, state: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="zipCode">ZIP Code</Label>
-                <Input
-                  id="zipCode"
-                  value={createForm.zipCode}
-                  onChange={(e) => setCreateForm(prev => ({ ...prev, zipCode: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="country">Country</Label>
-              <Input
-                id="country"
-                value={createForm.country}
-                onChange={(e) => setCreateForm(prev => ({ ...prev, country: e.target.value }))}
-              />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={actionLoading}>
-                {actionLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  'Create Organization'
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <CreateOrganizationWizard
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onSuccess={() => {
+          setActionSuccess('Organization and admin created. Activation email sent.')
+          setPagination((prev) => ({ ...prev, page: 1 }))
+          setSearch('')
+          setTypeFilter('all')
+          setStatusFilter('all')
+          fetchOrganizations()
+          setTimeout(() => setActionSuccess(null), 5000)
+        }}
+      />
 
       {/* Edit Modal */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>

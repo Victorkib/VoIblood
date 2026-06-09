@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,29 +8,91 @@ import { X, Plus, Trash2 } from 'lucide-react'
 import { useFormValidation } from '@/lib/use-form-validation'
 import { FormField, FormError } from '@/components/ui/form-error'
 
+function urgencyDefaultDate(level) {
+  const date = new Date()
+  if (level === 'urgent') date.setDate(date.getDate() + 1)
+  else if (level === 'routine') date.setDate(date.getDate() + 2)
+  return date.toISOString().slice(0, 10)
+}
+
+function scoreDestination(destination, requirements) {
+  return requirements.reduce((sum, req) => {
+    const available = destination.inventoryByBloodType?.[req.bloodType] || 0
+    return sum + Math.min(available, req.quantity)
+  }, 0)
+}
+
 export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) {
   const [formData, setFormData] = useState({
+    sourceOrganizationId: '',
+    requestingOrganizationId: '',
     requestingOrganizationName: '',
-    requestingOrganizationPhone: '',
-    requestingOrganizationEmail: '',
+    contactPerson: '',
+    contactPhone: '',
+    contactEmail: '',
     patientName: '',
     patientAge: '',
-    medicalCondition: '',
+    diagnosis: '',
     urgency: 'routine',
-    bloodRequirements: [{ bloodType: 'O+', quantity: 1 }],
+    requiredDate: urgencyDefaultDate('routine'),
+    bloodRequirements: [{ bloodType: 'O+', component: 'whole_blood', quantity: 1 }],
     notes: '',
   })
+  const [requestMeta, setRequestMeta] = useState(null)
+  const [metaLoading, setMetaLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [fieldErrors, setFieldErrors] = useState({})
   const { validate } = useFormValidation('request')
 
   const bloodTypes = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']
-  const urgencyLevels = ['routine', 'urgent', 'critical']
+  const urgencyLevels = ['routine', 'urgent', 'emergency']
+  const components = ['whole_blood', 'rbc', 'plasma', 'platelets', 'cryo']
+
+  useEffect(() => {
+    if (!isOpen || !organizationId) return
+    let cancelled = false
+    async function fetchMeta() {
+      try {
+        setMetaLoading(true)
+        const res = await fetch(`/api/requests/meta?organizationId=${organizationId}`)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to load request metadata')
+        if (cancelled) return
+        setRequestMeta(data.data)
+        const topDestination = [...(data.data.destinations || [])]
+          .sort((a, b) => scoreDestination(b, formData.bloodRequirements) - scoreDestination(a, formData.bloodRequirements))[0]
+
+        setFormData((prev) => ({
+          ...prev,
+          requestingOrganizationId: organizationId,
+          requestingOrganizationName: data.data.requester?.organizationName || prev.requestingOrganizationName,
+          contactPerson: data.data.requester?.contactPerson || prev.contactPerson,
+          contactPhone: data.data.requester?.contactPhone || prev.contactPhone,
+          contactEmail: data.data.requester?.contactEmail || prev.contactEmail,
+          sourceOrganizationId: topDestination?.id || prev.sourceOrganizationId,
+        }))
+      } catch (err) {
+        if (!cancelled) setError(err.message)
+      } finally {
+        if (!cancelled) setMetaLoading(false)
+      }
+    }
+    fetchMeta()
+    return () => {
+      cancelled = true
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, organizationId])
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
+    setFormData((prev) => {
+      if (name === 'urgency') {
+        return { ...prev, urgency: value, requiredDate: urgencyDefaultDate(value) }
+      }
+      return { ...prev, [name]: value }
+    })
     if (fieldErrors[name]) {
       setFieldErrors((prev) => ({ ...prev, [name]: null }))
     }
@@ -39,7 +101,10 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
   const handleRequirementChange = (index, field, value) => {
     setFormData((prev) => {
       const newRequirements = [...prev.bloodRequirements]
-      newRequirements[index] = { ...newRequirements[index], [field]: field === 'quantity' ? parseInt(value) : value }
+      newRequirements[index] = {
+        ...newRequirements[index],
+        [field]: field === 'quantity' ? parseInt(value || '1', 10) : value,
+      }
       return { ...prev, bloodRequirements: newRequirements }
     })
   }
@@ -51,7 +116,7 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
     }
     setFormData((prev) => ({
       ...prev,
-      bloodRequirements: [...prev.bloodRequirements, { bloodType: 'O+', quantity: 1 }],
+      bloodRequirements: [...prev.bloodRequirements, { bloodType: 'O+', component: 'whole_blood', quantity: 1 }],
     }))
   }
 
@@ -68,8 +133,12 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
     // Validate required fields
     const errors = {}
     if (!formData.requestingOrganizationName.trim()) errors.requestingOrganizationName = 'Organization name is required'
+    if (!formData.sourceOrganizationId) errors.sourceOrganizationId = 'Select destination organization'
+    if (!formData.contactPerson.trim()) errors.contactPerson = 'Contact person is required'
+    if (!formData.contactPhone.trim()) errors.contactPhone = 'Contact phone is required'
     if (!formData.patientName.trim()) errors.patientName = 'Patient name is required'
-    if (!formData.medicalCondition.trim()) errors.medicalCondition = 'Medical condition is required'
+    if (!formData.diagnosis.trim()) errors.diagnosis = 'Diagnosis is required'
+    if (!formData.requiredDate) errors.requiredDate = 'Required date is required'
     if (formData.bloodRequirements.length === 0) {
       setError('At least one blood requirement is needed')
       return
@@ -93,9 +162,19 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...formData,
-          organizationId,
-          patientAge: parseInt(formData.patientAge),
+          sourceOrganizationId: formData.sourceOrganizationId,
+          requestingOrganizationId: formData.requestingOrganizationId || organizationId,
+          requestingOrganizationName: formData.requestingOrganizationName,
+          contactPerson: formData.contactPerson,
+          contactPhone: formData.contactPhone,
+          contactEmail: formData.contactEmail,
+          patientName: formData.patientName,
+          patientAge: formData.patientAge ? parseInt(formData.patientAge, 10) : undefined,
+          diagnosis: formData.diagnosis,
+          urgency: formData.urgency,
+          bloodRequirements: formData.bloodRequirements,
+          requiredDate: formData.requiredDate,
+          notes: formData.notes,
         }),
       })
 
@@ -107,14 +186,18 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
       const data = await response.json()
       onSuccess(data.data)
       setFormData({
+        sourceOrganizationId: '',
+        requestingOrganizationId: organizationId || '',
         requestingOrganizationName: '',
-        requestingOrganizationPhone: '',
-        requestingOrganizationEmail: '',
+        contactPerson: '',
+        contactPhone: '',
+        contactEmail: '',
         patientName: '',
         patientAge: '',
-        medicalCondition: '',
+        diagnosis: '',
         urgency: 'routine',
-        bloodRequirements: [{ bloodType: 'O+', quantity: 1 }],
+        requiredDate: urgencyDefaultDate('routine'),
+        bloodRequirements: [{ bloodType: 'O+', component: 'whole_blood', quantity: 1 }],
         notes: '',
       })
       onClose()
@@ -159,26 +242,51 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
                 className={fieldErrors.requestingOrganizationName ? 'border-red-600' : ''}
               />
             </FormField>
+            <FormField label="Send Request To" error={fieldErrors.sourceOrganizationId} required>
+              <select
+                name="sourceOrganizationId"
+                value={formData.sourceOrganizationId}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={metaLoading}
+              >
+                <option value="">{metaLoading ? 'Loading destinations...' : 'Select blood bank / transfusion center'}</option>
+                {(requestMeta?.destinations || []).map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name} ({org.type.replace('_', ' ')}) {org.city ? `- ${org.city}` : ''}
+                  </option>
+                ))}
+              </select>
+            </FormField>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField label="Phone">
+              <FormField label="Contact Person" error={fieldErrors.contactPerson} required>
                 <Input
-                  type="tel"
-                  name="requestingOrganizationPhone"
-                  value={formData.requestingOrganizationPhone}
+                  type="text"
+                  name="contactPerson"
+                  value={formData.contactPerson}
                   onChange={handleInputChange}
-                  placeholder="+1 (555) 000-0000"
+                  placeholder="Dr. Jane Doe"
                 />
               </FormField>
-              <FormField label="Email">
+              <FormField label="Contact Phone" error={fieldErrors.contactPhone} required>
                 <Input
-                  type="email"
-                  name="requestingOrganizationEmail"
-                  value={formData.requestingOrganizationEmail}
+                  type="tel"
+                  name="contactPhone"
+                  value={formData.contactPhone}
                   onChange={handleInputChange}
-                  placeholder="contact@hospital.com"
+                  placeholder="+2547XXXXXXXX"
                 />
               </FormField>
             </div>
+            <FormField label="Contact Email">
+              <Input
+                type="email"
+                name="contactEmail"
+                value={formData.contactEmail}
+                onChange={handleInputChange}
+                placeholder="contact@hospital.co.ke"
+              />
+            </FormField>
           </div>
 
           {/* Patient Info */}
@@ -207,14 +315,14 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
                 />
               </FormField>
             </div>
-            <FormField label="Medical Condition" error={fieldErrors.medicalCondition} required hint="e.g., Surgery recovery, Trauma">
+            <FormField label="Diagnosis" error={fieldErrors.diagnosis} required hint="e.g., Surgery recovery, Trauma">
               <Input
                 type="text"
-                name="medicalCondition"
-                value={formData.medicalCondition}
+                name="diagnosis"
+                value={formData.diagnosis}
                 onChange={handleInputChange}
                 placeholder="Surgery recovery, Trauma, etc."
-                className={fieldErrors.medicalCondition ? 'border-red-600' : ''}
+                className={fieldErrors.diagnosis ? 'border-red-600' : ''}
               />
             </FormField>
           </div>
@@ -247,6 +355,20 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
                       {bloodTypes.map((type) => (
                         <option key={type} value={type}>
                           {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-foreground/60 mb-1">Component</label>
+                    <select
+                      value={req.component || 'whole_blood'}
+                      onChange={(e) => handleRequirementChange(index, 'component', e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      {components.map((type) => (
+                        <option key={type} value={type}>
+                          {type.replace('_', ' ')}
                         </option>
                       ))}
                     </select>
@@ -295,6 +417,15 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
                 ))}
               </select>
             </div>
+            <FormField label="Required Date" error={fieldErrors.requiredDate} required>
+              <Input
+                type="date"
+                name="requiredDate"
+                value={formData.requiredDate}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={handleInputChange}
+              />
+            </FormField>
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">Additional Notes</label>
               <textarea
@@ -307,6 +438,30 @@ export function NewRequestModal({ isOpen, onClose, onSuccess, organizationId }) 
               />
             </div>
           </div>
+
+          {formData.sourceOrganizationId && (
+            <div className="space-y-3 border-t border-border pt-6">
+              <h3 className="font-semibold text-foreground">Availability Preview</h3>
+              <div className="rounded-lg border border-border bg-secondary/5 p-4 space-y-2">
+                {formData.bloodRequirements.map((req, index) => {
+                  const destination = (requestMeta?.destinations || []).find((item) => item.id === formData.sourceOrganizationId)
+                  const available = destination?.inventoryByBloodType?.[req.bloodType] || 0
+                  const shortage = Math.max(req.quantity - available, 0)
+                  return (
+                    <div key={`${req.bloodType}-${index}`} className="flex items-center justify-between text-sm">
+                      <span>
+                        {req.bloodType} {req.component ? `(${req.component.replace('_', ' ')})` : ''}
+                      </span>
+                      <span className={shortage > 0 ? 'text-amber-700' : 'text-emerald-700'}>
+                        Need {req.quantity} / Available {available}
+                        {shortage > 0 ? ` (short ${shortage})` : ' (full match)'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-6 border-t border-border">
             <Button variant="outline" onClick={onClose} className="flex-1">

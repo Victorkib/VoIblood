@@ -7,7 +7,13 @@ import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import Request from '@/lib/models/Request'
 import Organization from '@/lib/models/Organization'
-import { v4 as uuidv4 } from 'crypto'
+import crypto from 'crypto'
+import {
+  resolveOrgContext,
+  assertAnyOrgCapability,
+  assertOrgCapability,
+  ORG_CAPABILITIES,
+} from '@/lib/api/org-capability-guard'
 import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
 import { sendBloodRequestNotification } from '@/lib/email-service'
 import { logAuditEvent, AUDIT_ACTIONS, AUDIT_SEVERITY, getAuditContextFromRequest } from '@/lib/audit-logger'
@@ -29,10 +35,19 @@ export async function GET(request) {
   }
 
   try {
-    await connectDB()
-
     const { searchParams } = new URL(request.url)
     const organizationId = searchParams.get('organizationId')
+
+    const ctx = await resolveOrgContext(request, organizationId)
+    if (ctx.error) return ctx.error
+    const denied = assertAnyOrgCapability(
+      ctx.organization,
+      [ORG_CAPABILITIES.REQUEST_BLOOD, ORG_CAPABILITIES.FULFILL_REQUESTS],
+      ctx.user
+    )
+    if (denied) return denied
+
+    await connectDB()
     const status = searchParams.get('status')
     const urgency = searchParams.get('urgency')
     const search = searchParams.get('search')
@@ -46,8 +61,11 @@ export async function GET(request) {
       )
     }
 
-    // Build query
-    const query = { sourceOrganizationId: organizationId }
+    const org = await Organization.findById(organizationId).select('type').lean()
+    const isHospital = org?.type === 'hospital'
+    const query = isHospital
+      ? { requestingOrganizationId: organizationId }
+      : { sourceOrganizationId: organizationId }
 
     if (status) query.status = status
     if (urgency) query.urgency = urgency
@@ -64,6 +82,8 @@ export async function GET(request) {
     const skip = (page - 1) * limit
 
     const requests = await Request.find(query)
+      .populate('sourceOrganizationId', 'name type city')
+      .populate('requestingOrganizationId', 'name type city')
       .populate('approvedBy', 'fullName email')
       .populate('createdBy', 'fullName email')
       .sort({ createdAt: -1 })
@@ -74,7 +94,22 @@ export async function GET(request) {
 
     return NextResponse.json({
       success: true,
-      data: requests,
+      data: requests.map((req) => {
+        const sourceOrgName =
+          req.sourceOrganizationId?.name ||
+          req.sourceOrganizationName ||
+          'Unknown organization'
+        const requestingOrgName =
+          req.requestingOrganizationId?.name ||
+          req.requestingOrganizationName ||
+          'Unknown organization'
+        return {
+          ...req.toObject(),
+          sourceOrganizationName: sourceOrgName,
+          requestingOrganizationName: requestingOrgName,
+          counterpartOrganizationName: isHospital ? sourceOrgName : requestingOrgName,
+        }
+      }),
       pagination: {
         page,
         limit,
@@ -97,8 +132,6 @@ export async function GET(request) {
  */
 export async function POST(request) {
   try {
-    await connectDB()
-
     const body = await request.json()
     const {
       sourceOrganizationId,
@@ -106,10 +139,14 @@ export async function POST(request) {
       requestingOrganizationName,
       contactPerson,
       contactPhone,
+      contactEmail,
       patientName,
+      patientAge,
       diagnosis,
+      urgency = 'routine',
       bloodRequirements,
       requiredDate,
+      notes,
     } = body
 
     // Validate required fields
@@ -132,6 +169,17 @@ export async function POST(request) {
       )
     }
 
+    const postCtx = await resolveOrgContext(request, requestingOrganizationId)
+    if (postCtx.error) return postCtx.error
+    const postDenied = assertOrgCapability(
+      postCtx.organization,
+      ORG_CAPABILITIES.REQUEST_BLOOD,
+      postCtx.user
+    )
+    if (postDenied) return postDenied
+
+    await connectDB()
+
     // Check if organizations exist
     const sourceOrg = await Organization.findById(sourceOrganizationId)
     const requestingOrg = await Organization.findById(requestingOrganizationId)
@@ -143,15 +191,34 @@ export async function POST(request) {
       )
     }
 
+    const parsedPatientAge = Number(patientAge)
+
     // Generate unique request ID
-    const requestId = `REQ-${Date.now()}-${uuidv4().split('-')[0].toUpperCase()}`
+    const requestId = `REQ-${Date.now()}-${crypto.randomUUID().split('-')[0].toUpperCase()}`
 
     // Create request
     const newRequest = await Request.create({
-      ...body,
       requestId,
       sourceOrganizationId,
       requestingOrganizationId,
+      requestingOrganizationName: requestingOrganizationName || requestingOrg.name,
+      contactPerson,
+      contactPhone,
+      contactEmail,
+      patientName,
+      patientAge: Number.isFinite(parsedPatientAge) ? parsedPatientAge : undefined,
+      diagnosis,
+      urgency,
+      bloodRequirements: bloodRequirements.map((item) => ({
+        bloodType: item.bloodType,
+        component: item.component || 'whole_blood',
+        quantity: Number(item.quantity) || 1,
+        requested: Number(item.quantity) || 1,
+        fulfilled: 0,
+      })),
+      requiredDate,
+      notes,
+      createdBy: postCtx.user?._id,
     })
 
     // Send notification email (non-blocking)
@@ -167,7 +234,7 @@ export async function POST(request) {
       const auditContext = getAuditContextFromRequest(request)
       await logAuditEvent({
         action: AUDIT_ACTIONS.REQUEST_CREATE,
-        userId: body.userId || 'system',
+        userId: postCtx.user?._id || 'system',
         organizationId: sourceOrganizationId,
         resourceType: 'request',
         resourceId: newRequest._id.toString(),

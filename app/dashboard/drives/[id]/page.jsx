@@ -66,6 +66,7 @@ import {
   Sparkles,
   Info,
 } from 'lucide-react'
+import { OrgRouteGuard } from '@/components/dashboard/org-route-guard'
 
 // Blood type color coding
 const bloodTypeStyles = {
@@ -336,7 +337,19 @@ export default function DriveDetailsPage() {
       const data = await res.json()
 
       if (res.ok) {
-        setActionSuccess(`✅ Donation recorded for ${selectedDonor.fullName}! Unit ID: ${data.data.unitId}`)
+        const gp = data.data?.gratitudePoints
+        let gpNote = ''
+        if (gp?.awarded) {
+          gpNote = ` Gratitude Points: +${gp.points} (balance ${gp.balance}).`
+        } else if (gp?.reason === 'not_eligible') {
+          gpNote =
+            ' No gratitude points yet — set eligibility to "Eligible for future donation" when screening is clear.'
+        } else if (gp?.reason === 'org_cannot_issue') {
+          gpNote = ' Gratitude points are not issued by this organization type.'
+        }
+        setActionSuccess(
+          `✅ Donation recorded for ${selectedDonor.fullName}! Unit ID: ${data.data.unitId}.${gpNote}`
+        )
         setIsRecordDonationOpen(false)
         setRecordDonationForm({
           volume: 450,
@@ -560,7 +573,8 @@ export default function DriveDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-blue-50">
+    <OrgRouteGuard feature="drives">
+    <div className="min-h-screen bg-gradient-to-br from-red-50/80 via-background to-blue-50/80 -m-4 sm:-m-6 lg:-m-8 p-4 sm:p-6 lg:p-8">
       {/* Action Messages */}
       {actionSuccess && (
         <div className="fixed top-4 right-4 z-50 bg-green-50 border border-green-200 text-green-800 px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-top">
@@ -1591,11 +1605,15 @@ export default function DriveDetailsPage() {
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       disabled={recordDonationLoading}
                     >
-                      <option value="eligible">Eligible for future donation</option>
+                      <option value="eligible">Eligible for future donation (awards gratitude points)</option>
                       <option value="temporarily_deferred">Temporarily deferred</option>
                       <option value="ineligible">Needs follow-up</option>
-                      <option value="pending">Pending review</option>
+                      <option value="pending">Pending review (no gratitude points)</option>
                     </select>
+                    <p className="text-xs text-muted-foreground">
+                      Thank-you points (10 per donation) are added only when eligibility is{' '}
+                      <strong>Eligible</strong> and the host is a blood bank or NGO.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="record-findings" className="text-sm font-medium">
@@ -1698,5 +1716,6 @@ export default function DriveDetailsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </OrgRouteGuard>
   )
 }

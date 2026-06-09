@@ -34,6 +34,8 @@ import {
 export default function DonorProfilePage() {
   const params = useParams()
   const [donor, setDonor] = useState(null)
+  const [partners, setPartners] = useState([])
+  const [walletDetail, setWalletDetail] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -61,6 +63,21 @@ export default function DonorProfilePage() {
 
       if (res.ok) {
         setDonor(data.data)
+        const profileToken = data.data?.donorToken || token
+        if (profileToken) {
+          const [wRes, pRes] = await Promise.all([
+            fetch(`/api/gratitude/wallet?donorToken=${encodeURIComponent(profileToken)}`),
+            fetch('/api/gratitude/partners'),
+          ])
+          if (wRes.ok) {
+            const wData = await wRes.json()
+            setWalletDetail(wData.data)
+          }
+          if (pRes.ok) {
+            const pData = await pRes.json()
+            setPartners(pData.data || [])
+          }
+        }
       } else {
         setError(data.error || 'Profile not found')
       }
@@ -283,6 +300,58 @@ export default function DonorProfilePage() {
             </div>
           </Card>
         </div>
+
+        {/* Gratitude Points — Kenya network */}
+        <Card className="mb-8 border-amber-100 bg-gradient-to-br from-amber-50/80 to-white">
+          <div className="p-6">
+            <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <Award className="w-5 h-5 text-amber-600" />
+              Gratitude Points
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Thank-you benefits from partner hospitals. Not payment for blood. No cash value.
+            </p>
+            <div className="grid md:grid-cols-3 gap-4 mb-4">
+              <div className="rounded-xl bg-white border border-amber-100 p-4 text-center">
+                <p className="text-3xl font-bold text-amber-700">
+                  {walletDetail?.balance ?? donor.gratitudeWallet?.balance ?? 0}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Available points</p>
+              </div>
+              <div className="rounded-xl bg-white border border-amber-100 p-4 text-center">
+                <p className="text-2xl font-bold text-gray-800">
+                  {walletDetail?.lifetimeEarned ?? donor.gratitudeWallet?.lifetimeEarned ?? 0}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Lifetime earned</p>
+              </div>
+              <div className="rounded-xl bg-white border border-amber-100 p-4 text-center">
+                <p className="text-2xl font-bold text-gray-800">
+                  {walletDetail?.pointsPerDonation ?? donor.gratitudeWallet?.pointsPerDonation ?? 10}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Points per eligible donation</p>
+              </div>
+            </div>
+            {partners.length > 0 && (
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-900/70 mb-2">
+                  Redeem at partner hospitals (bring ID in person)
+                </p>
+                <ul className="text-sm text-gray-700 space-y-1 max-h-32 overflow-y-auto">
+                  {partners.slice(0, 12).map((h) => (
+                    <li key={h.id}>
+                      <span className="font-medium">{h.name}</span>
+                      {h.city ? <span className="text-gray-500"> — {h.city}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-4">
+              Show your donor token at reception:{' '}
+              <span className="font-mono font-medium">{donor.donorToken}</span>
+            </p>
+          </div>
+        </Card>
 
         {/* Blood drives you're connected to */}
         {(upcoming.length > 0 || otherDrives.length > 0) && (

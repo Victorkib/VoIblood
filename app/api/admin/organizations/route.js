@@ -11,6 +11,7 @@ import { connectDB } from '@/lib/db'
 import Organization from '@/lib/models/Organization'
 import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin } from '@/lib/rbac'
+import { createOrganizationAdminUser } from '@/lib/org-onboarding/create-org-admin'
 
 /**
  * GET /api/admin/organizations
@@ -134,6 +135,8 @@ export async function POST(request) {
       directorPhone,
       bloodBankCapacity,
       bedCapacity,
+      subscriptionPlan,
+      firstAdmin,
     } = body
 
     // Validation
@@ -144,12 +147,19 @@ export async function POST(request) {
       )
     }
 
+    if (!firstAdmin?.email || !firstAdmin?.fullName) {
+      return NextResponse.json(
+        { error: 'First organization admin email and full name are required' },
+        { status: 400 }
+      )
+    }
+
     // Check if organization already exists
     const existingOrg = await Organization.findOne({
       $or: [
         { name: name.trim() },
-        { email: email.toLowerCase().trim() }
-      ]
+        { email: email.toLowerCase().trim() },
+      ],
     })
 
     if (existingOrg) {
@@ -159,41 +169,77 @@ export async function POST(request) {
       )
     }
 
-    // Create organization
-    const organization = await Organization.create({
+    const orgPayload = {
       name: name.trim(),
       type,
       email: email.toLowerCase().trim(),
       phone: phone.trim(),
       address: address?.trim() || '',
-      city: city?.trim() || '',
+      city: city?.trim() || 'Nairobi',
       state: state?.trim() || '',
       zipCode: zipCode?.trim() || '',
-      country: country?.trim() || 'United States',
+      country: country?.trim() || 'Kenya',
       registrationNumber: registrationNumber?.trim() || '',
-      directorName: directorName?.trim() || '',
-      directorPhone: directorPhone?.trim() || '',
+      directorName: directorName?.trim() || firstAdmin.fullName?.trim() || '',
+      directorPhone: directorPhone?.trim() || firstAdmin.phone?.trim() || phone.trim(),
       bloodBankCapacity: bloodBankCapacity || 0,
       bedCapacity: bedCapacity || 0,
       isActive: true,
       accountStatus: 'active',
       isPremium: false,
-      subscriptionPlan: 'basic',
+      subscriptionPlan: subscriptionPlan || 'basic',
       createdBy: user._id,
-    })
+    }
+
+    if (type === 'hospital' && subscriptionPlan === 'enterprise') {
+      orgPayload.rewardsProgram = { partnerActive: true, partnerSince: new Date() }
+    }
+
+    const organization = await Organization.create(orgPayload)
+
+    let adminResult = null
+    try {
+      adminResult = await createOrganizationAdminUser({
+        email: firstAdmin.email,
+        fullName: firstAdmin.fullName,
+        phone: firstAdmin.phone || phone,
+        organizationId: organization._id,
+        role: firstAdmin.role || 'org_admin',
+        invitedByUserId: user._id,
+        sendWelcomeEmail: firstAdmin.sendWelcomeEmail !== false,
+      })
+    } catch (adminErr) {
+      await Organization.deleteOne({ _id: organization._id })
+      return NextResponse.json(
+        { error: `Organization not created: ${adminErr.message}` },
+        { status: 400 }
+      )
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'Organization created successfully',
+      message: adminResult?.created
+        ? 'Organization and admin account created. Welcome email sent.'
+        : 'Organization created. Admin account already linked.',
       data: {
-        id: organization._id.toString(),
-        name: organization.name,
-        type: organization.type,
-        email: organization.email,
-        phone: organization.phone,
-        city: organization.city,
-        isActive: organization.isActive,
-        createdAt: organization.createdAt,
+        organization: {
+          id: organization._id.toString(),
+          name: organization.name,
+          type: organization.type,
+          email: organization.email,
+          phone: organization.phone,
+          city: organization.city,
+          country: organization.country,
+          isActive: organization.isActive,
+          createdAt: organization.createdAt,
+        },
+        admin: {
+          id: adminResult.user._id.toString(),
+          email: adminResult.user.email,
+          fullName: adminResult.user.fullName,
+          role: adminResult.user.role,
+        },
+        credentials: adminResult.credentials,
       },
     }, { status: 201 })
   } catch (error) {

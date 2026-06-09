@@ -22,6 +22,9 @@ import {
   FileText,
   Activity,
 } from 'lucide-react'
+import { OrgRouteGuard } from '@/components/dashboard/org-route-guard'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 
 const statusConfig = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
@@ -38,6 +41,14 @@ export default function RequestDetailsPage() {
   const [request, setRequest] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [actionError, setActionError] = useState(null)
+  const [actionSuccess, setActionSuccess] = useState(null)
+  const [rejectionReason, setRejectionReason] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
+  const [deliveredBy, setDeliveredBy] = useState('')
+  const [availableUnits, setAvailableUnits] = useState([])
+  const [selectedUnitIds, setSelectedUnitIds] = useState([])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -64,6 +75,54 @@ export default function RequestDetailsPage() {
       setError('Failed to connect to server')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchAvailableUnits = async (sourceOrgId) => {
+    if (!sourceOrgId) return
+    try {
+      const res = await fetch(
+        `/api/inventory?organizationId=${sourceOrgId}&status=available&limit=100`
+      )
+      const data = await res.json()
+      if (res.ok) {
+        setAvailableUnits(data.data || [])
+      }
+    } catch {
+      // non-blocking
+    }
+  }
+
+  useEffect(() => {
+    if (!request?.sourceOrganizationId?._id && !request?.sourceOrganizationId) return
+    const sourceOrgId = request.sourceOrganizationId?._id || request.sourceOrganizationId
+    if (request?.canActAsSupplier) fetchAvailableUnits(sourceOrgId)
+  }, [request?.sourceOrganizationId, request?.canActAsSupplier])
+
+  const callAction = async (action, payload = {}) => {
+    try {
+      setActionLoading(true)
+      setActionError(null)
+      setActionSuccess(null)
+
+      const res = await fetch(`/api/requests/${params.id}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...payload }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Action failed')
+
+      setActionSuccess(data.message || 'Request updated')
+      await fetchRequest()
+      if (request?.canActAsSupplier) {
+        const sourceOrgId = request.sourceOrganizationId?._id || request.sourceOrganizationId
+        await fetchAvailableUnits(sourceOrgId)
+      }
+    } catch (err) {
+      setActionError(err.message)
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -98,7 +157,8 @@ export default function RequestDetailsPage() {
   const StatusIcon = status.icon
 
   return (
-    <div className="p-6 space-y-6">
+    <OrgRouteGuard feature="requests">
+    <div className="space-y-6 max-w-7xl mx-auto w-full">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -108,7 +168,12 @@ export default function RequestDetailsPage() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-foreground">Blood Request Details</h1>
-            <p className="mt-1 text-foreground/60">Request from {request.requestingFacility || 'Unknown Facility'}</p>
+            <p className="mt-1 text-foreground/60">
+              {request.canActAsSupplier ? 'Incoming request from' : 'Request sent to'}{' '}
+              {request.canActAsSupplier
+                ? request.requestingOrganizationName || 'Unknown facility'
+                : request.sourceOrganizationName || 'Unknown organization'}
+            </p>
           </div>
         </div>
         <Badge className={`${status.color} text-sm px-3 py-1`}>
@@ -116,6 +181,130 @@ export default function RequestDetailsPage() {
           {status.label}
         </Badge>
       </div>
+
+      {actionError && (
+        <Card className="p-4 border-red-500/40 bg-red-500/5 text-red-700">{actionError}</Card>
+      )}
+      {actionSuccess && (
+        <Card className="p-4 border-green-500/40 bg-green-500/5 text-green-700">{actionSuccess}</Card>
+      )}
+
+      {(request.canActAsSupplier || request.canActAsRequester) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Request Actions</CardTitle>
+            <CardDescription>
+              {request.canActAsSupplier
+                ? 'Manage approval and fulfillment workflow'
+                : 'Manage requester-side controls'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {request.canActAsSupplier && request.status === 'pending' && (
+              <div className="flex flex-wrap gap-2 items-end">
+                <Button onClick={() => callAction('approve')} disabled={actionLoading}>
+                  Approve
+                </Button>
+                <div className="flex-1 min-w-[220px]">
+                  <Input
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Rejection reason"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => callAction('reject', { reason: rejectionReason })}
+                  disabled={actionLoading || !rejectionReason.trim()}
+                >
+                  Reject
+                </Button>
+              </div>
+            )}
+
+            {request.canActAsSupplier &&
+              ['approved', 'partially_fulfilled', 'pending'].includes(request.status) && (
+                <div className="space-y-3 border rounded-lg p-3">
+                  <p className="text-sm font-medium">Allocate units</p>
+                  <div className="max-h-48 overflow-auto space-y-2">
+                    {availableUnits.map((unit) => {
+                      const checked = selectedUnitIds.includes(unit._id)
+                      return (
+                        <label key={unit._id} className="flex items-center justify-between text-sm border rounded px-2 py-1">
+                          <span>
+                            {unit.unitId} - {unit.bloodType} ({unit.component || 'whole blood'})
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              setSelectedUnitIds((prev) =>
+                                e.target.checked
+                                  ? [...prev, unit._id]
+                                  : prev.filter((id) => id !== unit._id)
+                              )
+                            }}
+                          />
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => callAction('allocate', { unitIds: selectedUnitIds })}
+                      disabled={actionLoading || selectedUnitIds.length === 0}
+                    >
+                      Allocate selected
+                    </Button>
+                    <Button
+                      onClick={() => callAction('fulfill')}
+                      disabled={actionLoading}
+                    >
+                      Mark fulfilled
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+            {request.canActAsSupplier && request.status === 'fulfilled' && (
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <Input
+                    value={deliveredBy}
+                    onChange={(e) => setDeliveredBy(e.target.value)}
+                    placeholder="Delivered by"
+                  />
+                </div>
+                <Button
+                  onClick={() => callAction('deliver', { deliveredBy })}
+                  disabled={actionLoading || !deliveredBy.trim()}
+                >
+                  Mark delivered
+                </Button>
+              </div>
+            )}
+
+            {request.canActAsRequester &&
+              ['pending', 'approved', 'partially_fulfilled'].includes(request.status) && (
+                <div className="space-y-2">
+                  <Textarea
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="Cancellation reason"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => callAction('cancel', { cancelReason })}
+                    disabled={actionLoading}
+                  >
+                    Cancel request
+                  </Button>
+                </div>
+              )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Request Information */}
       <Card>
@@ -132,7 +321,7 @@ export default function RequestDetailsPage() {
                 <p className="text-sm text-foreground/60">Requesting Facility</p>
                 <p className="font-medium flex items-center gap-2">
                   <Hospital className="w-4 h-4" />
-                  {request.requestingFacility || 'N/A'}
+                  {request.requestingOrganizationName || 'N/A'}
                 </p>
               </div>
               <div>
@@ -152,10 +341,10 @@ export default function RequestDetailsPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <p className="text-sm text-foreground/60">Facility Location</p>
+                <p className="text-sm text-foreground/60">Source Organization</p>
                 <p className="font-medium flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
-                  {request.facilityLocation || 'N/A'}
+                  {request.sourceOrganizationName || 'N/A'}
                 </p>
               </div>
               <div>
@@ -169,7 +358,7 @@ export default function RequestDetailsPage() {
                 <p className="text-sm text-foreground/60">Required By</p>
                 <p className="font-medium flex items-center gap-2">
                   <Clock className="w-4 h-4" />
-                  {request.requiredBy ? new Date(request.requiredBy).toLocaleDateString() : 'N/A'}
+                  {request.requiredDate ? new Date(request.requiredDate).toLocaleDateString() : 'N/A'}
                 </p>
               </div>
             </div>
@@ -223,17 +412,17 @@ export default function RequestDetailsPage() {
         </Card>
       )}
 
-      {/* Purpose/Reason */}
-      {request.purpose && (
+      {/* Diagnosis */}
+      {request.diagnosis && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              Purpose / Reason
+              Diagnosis
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm whitespace-pre-wrap">{request.purpose}</p>
+            <p className="text-sm whitespace-pre-wrap">{request.diagnosis}</p>
           </CardContent>
         </Card>
       )}
@@ -300,6 +489,34 @@ export default function RequestDetailsPage() {
           </CardContent>
         </Card>
       )}
+
+      {(request.fulfilledDate || request.deliveredDate) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Transfer Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-foreground/80 space-y-1">
+            <p>
+              {request.allocatedUnits?.length || 0} allocated unit(s) transferred from{' '}
+              <strong>{request.sourceOrganizationName || 'source organization'}</strong> to{' '}
+              <strong>{request.requestingOrganizationName || 'requesting organization'}</strong>{' '}
+              when this request was marked fulfilled.
+            </p>
+            {request.deliveredDate ? (
+              <p>
+                Delivered by <strong>{request.deliveredBy || 'N/A'}</strong> on{' '}
+                <strong>{new Date(request.deliveredDate).toLocaleString()}</strong>.
+              </p>
+            ) : (
+              <p>Delivery confirmation is still pending.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
+    </OrgRouteGuard>
   )
 }

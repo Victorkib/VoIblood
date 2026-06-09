@@ -46,10 +46,18 @@ function SignupPageContent() {
   const [orgType, setOrgType] = useState('')
   const [orgDescription, setOrgDescription] = useState('')
   const [orgMotivation, setOrgMotivation] = useState('')
+  const [orgPhone, setOrgPhone] = useState('')
+  const [orgAddress, setOrgAddress] = useState('')
+  const [orgCity, setOrgCity] = useState('Nairobi')
+  const [orgState, setOrgState] = useState('Nairobi County')
+  const [orgCountry, setOrgCountry] = useState('Kenya')
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [requiresConfirmation, setRequiresConfirmation] = useState(false)
+  const [resendLoading, setResendLoading] = useState(false)
+  const [resendMessage, setResendMessage] = useState('')
+  const [resendError, setResendError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [touched, setTouched] = useState({})
@@ -110,6 +118,9 @@ function SignupPageContent() {
       if (orgSelection === 'create') {
         if (!orgName.trim()) errors.push('Organization name is required')
         if (!orgType) errors.push('Organization type is required')
+        if (!orgPhone.trim()) errors.push('Organization phone is required')
+        if (!orgAddress.trim()) errors.push('Organization address is required')
+        if (!orgCity.trim()) errors.push('City is required')
         if (!orgMotivation.trim()) errors.push('Please tell us why you want to create this organization')
       }
       if (orgSelection === 'join' && !selectedOrg) {
@@ -162,6 +173,18 @@ function SignupPageContent() {
         setError('Organization type is required')
         return
       }
+      if (!orgPhone.trim()) {
+        setError('Organization phone is required')
+        return
+      }
+      if (!orgAddress.trim()) {
+        setError('Organization address is required')
+        return
+      }
+      if (!orgCity.trim()) {
+        setError('City is required')
+        return
+      }
       if (!orgMotivation.trim()) {
         setError('Please tell us why you want to create this organization')
         return
@@ -193,6 +216,11 @@ function SignupPageContent() {
         orgType,
         orgDescription: orgDescription.trim(),
         orgMotivation: orgMotivation.trim(),
+        orgPhone: orgPhone.trim(),
+        orgAddress: orgAddress.trim(),
+        orgCity: orgCity.trim(),
+        orgState: orgState.trim(),
+        orgCountry: orgCountry.trim(),
       })
 
       if (result.requiresEmailConfirmation) {
@@ -253,6 +281,29 @@ function SignupPageContent() {
 
   const strengthLabel = getStrengthLabel()
 
+  async function handleResendVerification() {
+    if (!formData.email || resendLoading) return
+    setResendLoading(true)
+    setResendMessage('')
+    setResendError('')
+    try {
+      const res = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to resend verification email')
+      }
+      setResendMessage(data.message || 'Verification email sent. Please check your inbox.')
+    } catch (err) {
+      setResendError(err.message || 'Failed to resend verification email')
+    } finally {
+      setResendLoading(false)
+    }
+  }
+
   // Steps configuration
   const steps = [
     { number: 1, title: 'Personal Info', icon: User },
@@ -276,6 +327,9 @@ function SignupPageContent() {
           <p className="text-foreground">
             Please check your email at <strong className="text-foreground">{formData.email}</strong> and click the confirmation link.
           </p>
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-left text-xs text-amber-900">
+            Your organization request is already saved but will remain hidden from approvers until your email is verified.
+          </div>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
             <p className="text-sm text-blue-900 font-medium mb-2">What happens next?</p>
             <ol className="text-xs text-blue-800 space-y-1 list-decimal list-inside">
@@ -285,6 +339,31 @@ function SignupPageContent() {
               <li>You'll receive an email with the decision (usually within 24-48 hours)</li>
             </ol>
           </div>
+          {resendMessage && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-xs text-green-800 text-left">
+              {resendMessage}
+            </div>
+          )}
+          {resendError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800 text-left">
+              {resendError}
+            </div>
+          )}
+          <Button
+            variant="secondary"
+            onClick={handleResendVerification}
+            disabled={resendLoading}
+            className="w-full"
+          >
+            {resendLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Resending...
+              </>
+            ) : (
+              'Resend confirmation email'
+            )}
+          </Button>
           <Button variant="outline" onClick={() => router.push('/auth/login')} className="w-full">
             Back to Sign In
           </Button>
@@ -667,6 +746,68 @@ function SignupPageContent() {
                         <option value="transfusion_center">Transfusion Center</option>
                         <option value="ngo">NGO / Non-Profit</option>
                       </select>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="orgPhone">Organization Phone *</Label>
+                        <Input
+                          id="orgPhone"
+                          type="tel"
+                          value={orgPhone}
+                          onChange={(e) => setOrgPhone(e.target.value)}
+                          placeholder="+254 7XX XXX XXX"
+                          disabled={isLoading}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="orgCity">City *</Label>
+                        <Input
+                          id="orgCity"
+                          value={orgCity}
+                          onChange={(e) => setOrgCity(e.target.value)}
+                          placeholder="Nairobi"
+                          disabled={isLoading}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="orgAddress">Physical Address *</Label>
+                      <Input
+                        id="orgAddress"
+                        value={orgAddress}
+                        onChange={(e) => setOrgAddress(e.target.value)}
+                        placeholder="Street, building, area"
+                        disabled={isLoading}
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="orgState">County / Region</Label>
+                        <Input
+                          id="orgState"
+                          value={orgState}
+                          onChange={(e) => setOrgState(e.target.value)}
+                          placeholder="Nairobi County"
+                          disabled={isLoading}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="orgCountry">Country</Label>
+                        <Input
+                          id="orgCountry"
+                          value={orgCountry}
+                          onChange={(e) => setOrgCountry(e.target.value)}
+                          disabled={isLoading}
+                          className="mt-1"
+                        />
+                      </div>
                     </div>
 
                     <div>

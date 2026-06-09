@@ -9,11 +9,12 @@ import { AuthCard } from '@/components/auth/auth-card'
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { useAuth } from '@/components/auth/auth-provider'
 import { Droplet, Loader2 } from 'lucide-react'
+import { getPostLoginRedirect } from '@/lib/auth/post-login-redirect'
 
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { login, loginWithOAuth, isAuthenticated } = useAuth()
+  const { user, login, loginWithOAuth, isAuthenticated } = useAuth()
   
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,10 +23,11 @@ function LoginForm() {
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      router.push('/dashboard')
+    if (isAuthenticated && user) {
+      const redirect = searchParams.get('redirect')
+      router.push(redirect && redirect.startsWith('/') ? redirect : getPostLoginRedirect(user))
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, user, router, searchParams])
 
   // Get error from URL params
   useEffect(() => {
@@ -41,8 +43,13 @@ function LoginForm() {
     setError('')
 
     try {
-      await login(email, password)
-      router.push('/dashboard')
+      const data = await login(email, password)
+      const redirect = searchParams.get('redirect')
+      router.push(
+        redirect && redirect.startsWith('/')
+          ? redirect
+          : getPostLoginRedirect(data.user)
+      )
     } catch (err) {
       // Handle email verification required
       if (err?.requiresEmailVerification) {

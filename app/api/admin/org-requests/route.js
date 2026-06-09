@@ -31,13 +31,26 @@ export async function GET(request) {
     }
 
     const { searchParams } = new URL(request.url)
-    const status = searchParams.get('status') || 'pending'
+    const statusFilter = searchParams.get('status') || 'pending'
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
 
-    // Only show 'pending' requests (not 'pending_email_verification')
-    // Super admin should only see email-verified requests
-    const query = { requestType: 'create_org', status: 'pending' }
+    // Allow super admin to inspect unverified requests when needed
+    const query = { requestType: 'create_org' }
+    if (statusFilter !== 'all') {
+      query.status = statusFilter
+    } else {
+      query.status = {
+        $in: [
+          'pending_email_verification',
+          'pending',
+          'approved',
+          'rejected',
+          'withdrawn',
+          'expired',
+        ],
+      }
+    }
 
     const skip = (page - 1) * limit
 

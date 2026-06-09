@@ -50,8 +50,8 @@ export async function GET(request) {
     // Build query
     let query = {}
     
-    // If user is admin, show all organizations they have access to
-    if (user.role === 'admin') {
+    // Super admins see all organizations; others see only their own
+    if (user.role === 'super_admin') {
       query = {}
     } else {
       // For other roles, show only their organization

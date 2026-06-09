@@ -6,7 +6,11 @@
 import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import BloodInventory from '@/lib/models/BloodInventory'
-import Organization from '@/lib/models/Organization'
+import {
+  resolveOrgContext,
+  assertOrgCapability,
+  ORG_CAPABILITIES,
+} from '@/lib/api/org-capability-guard'
 import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
 import { sendPostDonationHealthEmail } from '@/lib/email-service'
 
@@ -29,10 +33,19 @@ export async function GET(request) {
   }
 
   try {
-    await connectDB()
-
     const { searchParams } = new URL(request.url)
     const organizationId = searchParams.get('organizationId')
+
+    const ctx = await resolveOrgContext(request, organizationId)
+    if (ctx.error) return ctx.error
+    const denied = assertOrgCapability(
+      ctx.organization,
+      ORG_CAPABILITIES.MANAGE_INVENTORY,
+      ctx.user
+    )
+    if (denied) return denied
+
+    await connectDB()
     const bloodType = searchParams.get('bloodType')
     const status = searchParams.get('status')
     const component = searchParams.get('component')
@@ -125,8 +138,6 @@ export async function GET(request) {
  */
 export async function POST(request) {
   try {
-    await connectDB()
-
     const body = await request.json()
     const {
       organizationId,
@@ -149,6 +160,18 @@ export async function POST(request) {
       bloodWorkFindings = '',
       recommendations = '',
     } = body
+
+    const ctx = await resolveOrgContext(request, organizationId)
+    if (ctx.error) return ctx.error
+    const denied = assertOrgCapability(
+      ctx.organization,
+      ORG_CAPABILITIES.MANAGE_INVENTORY,
+      ctx.user
+    )
+    if (denied) return denied
+
+    await connectDB()
+
     const normalizedScreening = {
       hiv: testResults?.hiv || 'pending',
       hepatitisB: testResults?.hepatitisB || 'pending',
@@ -292,6 +315,21 @@ export async function POST(request) {
           }
         } catch (notificationError) {
           console.warn('[Inventory API] Post-donation email failed:', notificationError.message)
+        }
+
+        try {
+          const { awardGratitudePointsForDonation } = await import(
+            '@/lib/gratitude-points/award-service'
+          )
+          await awardGratitudePointsForDonation({
+            donor: donorDoc,
+            unitId: finalUnitId,
+            organizationId: organizationId.toString(),
+            eligibilityStatus: normalizedEligibilityStatus,
+            driveName: driveName || '',
+          })
+        } catch (gpErr) {
+          console.warn('[Inventory API] Gratitude points:', gpErr.message)
         }
       }
     }

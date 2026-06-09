@@ -15,6 +15,7 @@ import {
   recountDriveParticipantStats,
   resolveParticipantForAdmin,
 } from '@/lib/drive-participant-helpers'
+import { awardGratitudePointsForDonation } from '@/lib/gratitude-points/award-service'
 
 export async function POST(request, { params }) {
   try {
@@ -164,6 +165,19 @@ export async function POST(request, { params }) {
 
     await recountDriveParticipantStats(drive._id)
 
+    let gratitudePoints = null
+    try {
+      gratitudePoints = await awardGratitudePointsForDonation({
+        donor,
+        unitId: bloodUnit.unitId,
+        organizationId: drive.organizationId.toString(),
+        eligibilityStatus: normalizedEligibilityStatus,
+        driveName: drive.name,
+      })
+    } catch (gpErr) {
+      console.warn('[Record Donation] Gratitude points:', gpErr.message)
+    }
+
     if (sendNotification) {
       try {
         await sendDonorStatusNotification(donor, drive, 'completed', {
@@ -172,6 +186,7 @@ export async function POST(request, { params }) {
           bloodWorkFindings: bloodWorkFindings || bloodWorkSummary,
           recommendations,
           unitId: bloodUnit.unitId,
+          gratitudePoints,
         })
       } catch (notifErr) {
         console.warn('[Record Donation] Failed to send notification:', notifErr.message)
@@ -191,6 +206,7 @@ export async function POST(request, { params }) {
         totalDonations: newTotal,
         nextEligibleDate: nextEligible,
         notificationSent: sendNotification,
+        gratitudePoints,
       },
     })
   } catch (error) {

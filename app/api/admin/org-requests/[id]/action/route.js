@@ -80,20 +80,30 @@ export async function POST(request, { params }) {
         orgRequest.userId = userByEmail
       }
 
-      // Create the organization with ALL required fields
       const newOrg = await Organization.create({
         name: orgRequest.requestedOrgName,
-        type: orgRequest.requestedOrgType,
-        description: orgRequest.requestedOrgDescription || `${orgRequest.requestedOrgName} - Blood donation organization`,
+        type: orgRequest.requestedOrgType || 'blood_bank',
         email: orgRequest.userId.email,
-        phone: orgRequest.userId.phone || '+254700000000',
-        address: orgRequest.requestedOrgDescription || 'Address to be updated',
-        city: 'Nairobi',
-        state: 'Nairobi County',
-        country: 'Kenya',
+        phone:
+          orgRequest.requestedOrgPhone ||
+          orgRequest.userId.phone ||
+          '+254700000000',
+        address:
+          orgRequest.requestedOrgAddress ||
+          orgRequest.requestedOrgDescription ||
+          'Address to be updated in organization settings',
+        city: orgRequest.requestedOrgCity || 'Nairobi',
+        state: orgRequest.requestedOrgState || 'Nairobi County',
+        zipCode: '',
+        country: orgRequest.requestedOrgCountry || 'Kenya',
         createdBy: orgRequest.userId._id,
         isActive: true,
         accountStatus: 'active',
+        subscriptionPlan: 'basic',
+        rewardsProgram:
+          orgRequest.requestedOrgType === 'hospital'
+            ? { partnerActive: false }
+            : undefined,
       })
 
       // Update user: assign as org_admin

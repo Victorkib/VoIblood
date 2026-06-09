@@ -15,6 +15,7 @@ import Organization from '@/lib/models/Organization'
 import JoinRequest from '@/lib/models/JoinRequest'
 import OrganizationRequest from '@/lib/models/OrganizationRequest'
 import { sendRequestReceivedEmail } from '@/lib/org-request-emails'
+import { notifySuperAdminsOfOrgRequest } from '@/lib/org-onboarding/notify-super-admin'
 
 export async function GET(request) {
   try {
@@ -158,6 +159,12 @@ export async function GET(request) {
             console.log('[Callback] Request received email sent to:', mongoUser.email)
           } catch (emailErr) {
             console.warn('[Callback] Failed to send email:', emailErr.message)
+          }
+
+          try {
+            await notifySuperAdminsOfOrgRequest(orgRequest, mongoUser)
+          } catch (notifyErr) {
+            console.warn('[Callback] Super admin notify failed:', notifyErr.message)
           }
         } else {
           console.log('[Callback] No pending OrganizationRequest found for:', user.email)

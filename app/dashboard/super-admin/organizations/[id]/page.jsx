@@ -33,9 +33,12 @@ import {
   Clock,
   LogIn,
   LogOut,
-  Eye
+  Eye,
+  Copy,
+  KeyRound,
 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from '@/hooks/use-toast'
 
 export default function OrganizationDetailsPage() {
   const router = useRouter()
@@ -48,6 +51,9 @@ export default function OrganizationDetailsPage() {
   const [error, setError] = useState(null)
   const [isViewing, setIsViewing] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [partnerSaving, setPartnerSaving] = useState(false)
+  const [resendingUserId, setResendingUserId] = useState(null)
+  const [lastSetupUrl, setLastSetupUrl] = useState(null)
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'super_admin') {
@@ -191,6 +197,75 @@ export default function OrganizationDetailsPage() {
       </Badge>
     )
   }
+
+  const handleToggleRewardsPartner = async (enabled) => {
+    if (!organization) return
+    setPartnerSaving(true)
+    try {
+      const res = await fetch('/api/gratitude/admin/partner', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          organizationId: organization.id,
+          partnerActive: enabled,
+          partnerOverride: organization.subscriptionPlan === 'professional',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to update partner status')
+      setOrganization((prev) => ({
+        ...prev,
+        rewardsProgram: data.data.rewardsProgram,
+      }))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setPartnerSaving(false)
+    }
+  }
+
+  const handleResendActivation = async (memberId = null) => {
+    if (!organization) return
+    setResendingUserId(memberId || primaryAdmin?.id || 'org')
+    setLastSetupUrl(null)
+    try {
+      const res = await fetch(
+        `/api/admin/organizations/${organization.id}/resend-activation`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ userId: memberId || undefined }),
+        }
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to resend activation')
+
+      setLastSetupUrl(data.data?.setupUrl || null)
+      toast({
+        title: 'Activation email sent',
+        description: `New setup link sent to ${data.data?.email}. Previous links are no longer valid.`,
+      })
+    } catch (err) {
+      toast({
+        title: 'Could not resend activation',
+        description: err.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setResendingUserId(null)
+    }
+  }
+
+  const copySetupLink = async () => {
+    if (!lastSetupUrl) return
+    await navigator.clipboard.writeText(lastSetupUrl)
+    toast({ title: 'Link copied', description: 'Paste into a message if email did not arrive.' })
+  }
+
+  const primaryAdmin =
+    members.find((m) => m.role === 'org_admin') || members[0]
 
   const getTypeBadge = (type) => {
     const variants = {
@@ -432,9 +507,85 @@ export default function OrganizationDetailsPage() {
               <label className="text-sm font-medium text-gray-500">Subscription Plan</label>
               <div className="mt-1 capitalize">{organization.subscriptionPlan}</div>
             </div>
+            {organization.type === 'hospital' && (
+              <div className="pt-2 border-t">
+                <label className="text-sm font-medium text-gray-500">Gratitude Points Partner</label>
+                <p className="text-xs text-gray-500 mt-1 mb-2">
+                  Professional+ or Enterprise. Enables hospital thank-you redemptions (Kenya).
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={partnerSaving || organization.rewardsProgram?.partnerActive}
+                    onClick={() => handleToggleRewardsPartner(true)}
+                  >
+                    Enable partner
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={partnerSaving || !organization.rewardsProgram?.partnerActive}
+                    onClick={() => handleToggleRewardsPartner(false)}
+                  >
+                    Disable
+                  </Button>
+                </div>
+                {organization.rewardsProgram?.partnerActive && (
+                  <Badge className="mt-2 bg-rose-100 text-rose-800">Partner active</Badge>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      {primaryAdmin && (
+        <Card className="border-violet-200 bg-gradient-to-br from-violet-50/80 to-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-violet-900">
+              <KeyRound className="w-5 h-5" />
+              Admin account access
+            </CardTitle>
+            <CardDescription>
+              Send one iBlood email with a link to set password (email prefilled). Use this if the
+              admin never activated or lost the link.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex-1 text-sm">
+              <p className="font-medium text-gray-900">{primaryAdmin.fullName}</p>
+              <p className="text-gray-600">{primaryAdmin.email}</p>
+              {!primaryAdmin.lastLoginAt && (
+                <p className="text-amber-700 text-xs mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Has not signed in yet — resend activation recommended
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="default"
+                className="bg-violet-600 hover:bg-violet-700"
+                disabled={!!resendingUserId}
+                onClick={() => handleResendActivation(primaryAdmin.id)}
+              >
+                {resendingUserId === primaryAdmin.id ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Mail className="w-4 h-4 mr-2" />
+                )}
+                Resend activation email
+              </Button>
+              {lastSetupUrl && (
+                <Button type="button" variant="outline" onClick={copySetupLink}>
+                  <Copy className="w-4 h-4 mr-2" />
+                  Copy setup link
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Members Table */}
       <Card>
@@ -462,6 +613,7 @@ export default function OrganizationDetailsPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Last Login</TableHead>
                   <TableHead>Joined</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -488,6 +640,25 @@ export default function OrganizationDetailsPage() {
                       <div className="text-sm">
                         {new Date(member.createdAt).toLocaleDateString()}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-violet-700 hover:text-violet-900"
+                        disabled={!!resendingUserId}
+                        onClick={() => handleResendActivation(member.id)}
+                      >
+                        {resendingUserId === member.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Mail className="w-4 h-4 mr-1" />
+                            Resend activation
+                          </>
+                        )}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

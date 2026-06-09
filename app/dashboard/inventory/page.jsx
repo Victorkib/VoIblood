@@ -13,6 +13,8 @@ import {
   InventoryStatsSkeleton,
   InventoryTableSkeleton,
 } from '@/components/dashboard/inventory-skeletons'
+import { OrgFeatureLayout } from '@/components/dashboard/org-route-guard'
+import { useOrganizationId } from '@/lib/dashboard/use-organization-id'
 
 export default function InventoryPage() {
   const router = useRouter()
@@ -21,9 +23,43 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [orgOptions, setOrgOptions] = useState([])
+  const [selectedOrgId, setSelectedOrgId] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [lastFetchTime, setLastFetchTime] = useState(0)
   const { user, isLoading: authLoading } = useAuth()
+  const organizationId = useOrganizationId()
+  const effectiveOrganizationId = user?.role === 'super_admin'
+    ? (selectedOrgId || organizationId || '')
+    : organizationId
+
+  useEffect(() => {
+    if (user?.role !== 'super_admin') return
+    let cancelled = false
+
+    async function loadOrganizations() {
+      try {
+        const res = await fetch('/api/admin/organizations?limit=200')
+        const data = await res.json()
+        if (!res.ok || cancelled) return
+        const orgs = data.data || []
+        setOrgOptions(orgs)
+        setSelectedOrgId((prev) => {
+          if (prev) return prev
+          if (organizationId && orgs.some((o) => o.id === organizationId)) return organizationId
+          return orgs[0]?.id || ''
+        })
+      } catch {
+        // Non-blocking; existing error message handles empty context
+      }
+    }
+
+    loadOrganizations()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.role, organizationId])
 
   useEffect(() => {
     // Don't fetch data while auth is still loading
@@ -47,42 +83,9 @@ export default function InventoryPage() {
           return
         }
 
-        // Handle super admin viewing organization context
-        let organizationId = user.organizationId
-        
-        // For super admins, check if they're viewing a specific organization
-        if (user?.role === 'super_admin') {
-          try {
-            const sessionResponse = await fetch('/api/auth/session')
-            if (sessionResponse.ok) {
-              const sessionData = await sessionResponse.json()
-              if (sessionData.user?.viewingOrganizationId) {
-                organizationId = sessionData.user.viewingOrganizationId
-              }
-            }
-          } catch (sessionError) {
-            console.log('[Inventory] Could not check session context:', sessionError.message)
-          }
-          
-          // If still no organization ID, get first available organization
-          if (!organizationId) {
-            try {
-              const orgsResponse = await fetch('/api/admin/organizations')
-              if (orgsResponse.ok) {
-                const orgsData = await orgsResponse.json()
-                if (orgsData.data && orgsData.data.length > 0) {
-                  organizationId = orgsData.data[0].id
-                }
-              }
-            } catch (orgsError) {
-              console.log('[Inventory] Could not fetch organizations:', orgsError.message)
-            }
-          }
-        }
-        
-        if (!organizationId) {
+        if (!effectiveOrganizationId) {
           if (user?.role === 'super_admin') {
-            setError('No organization selected. Please select an organization to view.')
+            setError('No organization workspace found yet. Add or activate an organization from Platform Admin, then retry.')
           } else {
             setError('No organization assigned')
           }
@@ -91,7 +94,7 @@ export default function InventoryPage() {
         }
 
         const params = new URLSearchParams({
-          organizationId,
+          organizationId: effectiveOrganizationId,
           search: search || '',
           page: '1',
           limit: '10',
@@ -120,15 +123,13 @@ export default function InventoryPage() {
     }, 300)
 
     return () => clearTimeout(debounceTimer)
-  }, [user?.email, user?.organizationId, user?.role, authLoading, search, lastFetchTime])
+  }, [user?.email, user?.role, authLoading, search, lastFetchTime, effectiveOrganizationId])
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        if (!user) return
-
-        const organizationId = user.organizationId || user.id
-        const response = await fetch(`/api/dashboard/stats?organizationId=${organizationId}`)
+        if (!user || !effectiveOrganizationId) return
+        const response = await fetch(`/api/dashboard/stats?organizationId=${effectiveOrganizationId}`)
 
         if (!response.ok) throw new Error('Failed to fetch stats')
 
@@ -140,7 +141,7 @@ export default function InventoryPage() {
     }
 
     fetchStats()
-  }, [user])
+  }, [user, effectiveOrganizationId])
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('en-US', {
@@ -160,6 +161,48 @@ export default function InventoryPage() {
     if (diffDays <= 7) return { text: 'Warning', color: 'bg-yellow-500/10 text-yellow-700' }
     return { text: 'Available', color: 'bg-accent/10 text-accent' }
   }
+
+  const getInventoryStatus = (unit) => {
+    if (unit?.transfer?.isTransferredOut) {
+      return { text: 'Transferred', color: 'bg-blue-500/10 text-blue-700' }
+    }
+    if (unit?.status === 'reserved') {
+      return { text: 'Reserved', color: 'bg-violet-500/10 text-violet-700' }
+    }
+    if (unit?.status === 'used') {
+      return { text: 'Used', color: 'bg-slate-500/10 text-slate-700' }
+    }
+    if (unit?.status === 'discarded') {
+      return { text: 'Discarded', color: 'bg-destructive/10 text-destructive' }
+    }
+    return getExpiryStatus(unit.expiryDate)
+  }
+
+  const statusFilterDefs = [
+    { key: 'all', label: 'All' },
+    { key: 'available', label: 'Available' },
+    { key: 'reserved', label: 'Reserved' },
+    { key: 'transferred', label: 'Transferred Out' },
+    { key: 'used', label: 'Used' },
+    { key: 'discarded', label: 'Discarded' },
+    { key: 'expiring', label: 'Expiring <= 7d' },
+  ]
+
+  const filteredInventory =
+    statusFilter === 'all'
+      ? inventory
+      : inventory.filter((unit) => {
+          if (statusFilter === 'expiring') {
+            const now = new Date()
+            const expiry = new Date(unit.expiryDate)
+            const diffDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))
+            return unit.status === 'available' && diffDays >= 0 && diffDays <= 7
+          }
+          if (statusFilter === 'transferred') {
+            return Boolean(unit?.transfer?.isTransferredOut)
+          }
+          return unit.status === statusFilter
+        })
 
   const handleRecordSuccess = (newUnit) => {
     setInventory((prev) => [newUnit, ...prev])
@@ -182,24 +225,20 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Blood Inventory</h1>
-          <p className="mt-2 text-foreground/60">Track all blood units and stock levels</p>
-        </div>
+    <OrgFeatureLayout
+      feature="inventory"
+      actions={
         <Button className="gap-2" onClick={() => setIsModalOpen(true)}>
           <Plus className="w-4 h-4" />
-          Record Collection
+          Record collection
         </Button>
-      </div>
-
+      }
+    >
       <RecordCollectionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleRecordSuccess}
-        organizationId={user.organizationId || user.id}
+        organizationId={effectiveOrganizationId}
       />
 
       {/* Summary Cards */}
@@ -223,7 +262,27 @@ export default function InventoryPage() {
 
       {/* Search and Filter */}
       <Card className="p-4">
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4">
+          {user?.role === 'super_admin' && (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-foreground/70 whitespace-nowrap">Viewing organization</span>
+              <select
+                value={selectedOrgId}
+                onChange={(e) => {
+                  setSelectedOrgId(e.target.value)
+                  setLastFetchTime(0)
+                }}
+                className="px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm min-w-[260px]"
+              >
+                {orgOptions.length === 0 && <option value="">No organizations available</option>}
+                {orgOptions.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name} ({(org.type || '').replace('_', ' ')})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
             <Input
@@ -233,6 +292,25 @@ export default function InventoryPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {statusFilterDefs.map((filter) => {
+              const isActive = statusFilter === filter.key
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setStatusFilter(filter.key)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    isActive
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-background text-foreground/70 hover:bg-secondary/20'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              )
+            })}
           </div>
         </div>
       </Card>
@@ -261,9 +339,9 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {inventory.length > 0 ? (
-                  inventory.map((unit) => {
-                    const expiryStatus = getExpiryStatus(unit.expiryDate)
+                {filteredInventory.length > 0 ? (
+                  filteredInventory.map((unit) => {
+                    const expiryStatus = getInventoryStatus(unit)
                     return (
                       <tr key={unit._id} className="hover:bg-secondary/5 transition">
                         <td className="px-6 py-4 text-sm font-medium text-foreground">{unit.unitId}</td>
@@ -293,7 +371,7 @@ export default function InventoryPage() {
                 ) : (
                   <tr>
                     <td colSpan="6" className="px-6 py-4 text-center text-foreground/60">
-                      No blood units found
+                      No blood units match this filter
                     </td>
                   </tr>
                 )}
@@ -302,6 +380,6 @@ export default function InventoryPage() {
           </div>
         </Card>
       )}
-    </div>
+    </OrgFeatureLayout>
   )
 }

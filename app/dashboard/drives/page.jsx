@@ -48,6 +48,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { OrgFeatureLayout } from '@/components/dashboard/org-route-guard'
 
 export default function DrivesPage() {
   const router = useRouter()
@@ -252,28 +253,24 @@ export default function DrivesPage() {
     return <Badge className={variants[status] || variants.draft}>{status}</Badge>
   }
 
-  if (!isAuthenticated || !user || (user.role !== 'super_admin' && user.role !== 'org_admin')) {
+  if (!isAuthenticated || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+      <div className="min-h-[40vh] flex items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-primary" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Donation Drives</h1>
-          <p className="mt-2 text-foreground/60">Create and manage blood donation drives</p>
-        </div>
+    <OrgFeatureLayout
+      feature="drives"
+      actions={
         <Button onClick={() => setIsModalOpen(true)}>
           <Plus className="w-4 h-4 mr-2" />
-          Create Drive
+          Create drive
         </Button>
-      </div>
-
+      }
+    >
       {/* Action Messages */}
       {actionSuccess && (
         <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center gap-2">
@@ -512,7 +509,7 @@ export default function DrivesPage() {
                 id="city"
                 value={formData.city}
                 onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                placeholder="e.g., New York"
+                placeholder="e.g., Nairobi"
               />
             </div>
             <div>
@@ -765,6 +762,6 @@ export default function DrivesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </OrgFeatureLayout>
   )
 }

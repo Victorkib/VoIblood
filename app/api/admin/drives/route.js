@@ -8,6 +8,8 @@ import { connectDB } from '@/lib/db'
 import DonationDrive from '@/lib/models/DonationDrive'
 import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
+import Organization from '@/lib/models/Organization'
+import { assertDriveOrgAccess } from '@/lib/api/org-capability-guard'
 
 /**
  * GET /api/admin/drives
@@ -32,6 +34,12 @@ export async function GET(request) {
         { error: 'Insufficient permissions' },
         { status: 403 }
       )
+    }
+
+    if (!isSuperAdmin(user.role) && user.organizationId) {
+      const org = await Organization.findById(user.organizationId).lean()
+      const driveDenied = assertDriveOrgAccess(org, user)
+      if (driveDenied) return driveDenied
     }
 
     const { searchParams } = new URL(request.url)
@@ -135,6 +143,12 @@ export async function POST(request) {
         { error: 'Insufficient permissions' },
         { status: 403 }
       )
+    }
+
+    if (!isSuperAdmin(user.role) && user.organizationId) {
+      const org = await Organization.findById(user.organizationId).lean()
+      const driveDenied = assertDriveOrgAccess(org, user)
+      if (driveDenied) return driveDenied
     }
 
     const body = await request.json()

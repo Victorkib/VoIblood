@@ -109,6 +109,7 @@ export async function POST(request, { params }) {
         donorName: `${donor.firstName} ${donor.lastName}`,
         driveName: drive.name,
         appointmentDate: drive.date,
+        donorToken: donor.donorToken,
       })
     } catch (emailErr) {
       console.warn('Failed to send donor registration email:', emailErr.message)

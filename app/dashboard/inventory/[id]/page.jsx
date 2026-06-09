@@ -23,6 +23,7 @@ import {
   TestTube,
   Thermometer,
 } from 'lucide-react'
+import { OrgRouteGuard } from '@/components/dashboard/org-route-guard'
 import { InventoryDetailPageSkeleton } from '@/components/dashboard/inventory-skeletons'
 
 const statusConfig = {
@@ -117,7 +118,8 @@ export default function InventoryDetailsPage() {
   const daysSinceCollection = Math.floor((now - collectionDate) / (1000 * 60 * 60 * 24))
 
   return (
-    <div className="p-6 space-y-6">
+    <OrgRouteGuard feature="inventory">
+    <div className="space-y-6 max-w-7xl mx-auto w-full">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -463,5 +465,6 @@ export default function InventoryDetailsPage() {
         </CardContent>
       </Card>
     </div>
+    </OrgRouteGuard>
   )
 }

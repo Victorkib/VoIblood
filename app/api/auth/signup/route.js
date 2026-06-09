@@ -17,6 +17,7 @@ import Organization from '@/lib/models/Organization'
 import JoinRequest from '@/lib/models/JoinRequest'
 import OrganizationRequest from '@/lib/models/OrganizationRequest'
 import { sendRequestReceivedEmail } from '@/lib/org-request-emails'
+import { sendEmail } from '@/lib/email-service'
 
 export async function POST(request) {
   try {
@@ -36,6 +37,11 @@ export async function POST(request) {
       orgType,
       orgDescription,
       orgMotivation,
+      orgPhone,
+      orgAddress,
+      orgCity,
+      orgState,
+      orgCountry,
     } = await request.json()
 
     // Sanitize and validate inputs
@@ -99,6 +105,11 @@ export async function POST(request) {
             orgType,
             orgDescription,
             orgMotivation,
+            orgPhone,
+            orgAddress,
+            orgCity,
+            orgState,
+            orgCountry,
             bio,
             title,
           }
@@ -155,12 +166,63 @@ export async function POST(request) {
         requestedOrgName: orgName || `${sanitizedFullName}'s Organization`,
         requestedOrgType: finalOrgType,
         requestedOrgDescription: orgDescription || '',
+        requestedOrgPhone: (orgPhone || '').trim(),
+        requestedOrgAddress: (orgAddress || '').trim(),
+        requestedOrgCity: (orgCity || 'Nairobi').trim(),
+        requestedOrgState: (orgState || 'Nairobi County').trim(),
+        requestedOrgCountry: (orgCountry || 'Kenya').trim(),
         requestType: 'create_org',
         status: 'pending_email_verification', // Changes to 'pending' after email verified
         userEmail: sanitizedEmail, // Store email so we can find it later
         expiresAt, // Explicitly set required field
       })
       console.log('[Signup] OrganizationRequest created (pending email verification) for:', orgName)
+
+      // Backup notification using our existing email pipeline.
+      // This does NOT verify the user in Supabase; it helps users recover when
+      // provider verification emails are delayed or blocked.
+      try {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        const safeOrgName = orgRequest.requestedOrgName || 'your organization'
+        await sendEmail({
+          to: sanitizedEmail,
+          subject: `iBlood signup received - verify email to continue (${safeOrgName})`,
+          text: [
+            `Hello ${sanitizedFullName},`,
+            '',
+            `We received your organization signup request for "${safeOrgName}".`,
+            'To continue, you must verify your email via the Supabase confirmation link.',
+            '',
+            'If the confirmation email does not arrive:',
+            '1) Check spam/junk/promotions',
+            '2) Wait 2-3 minutes',
+            `3) Use resend on ${appUrl}/auth/signup or ${appUrl}/auth/login`,
+            '',
+            'Important: Super admins can only approve after your email is verified.',
+            '',
+            'iBlood Platform',
+          ].join('\n'),
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:20px">
+              <h2 style="margin-bottom:8px">Signup received</h2>
+              <p>Hello <strong>${sanitizedFullName}</strong>,</p>
+              <p>We received your organization signup request for <strong>${safeOrgName}</strong>.</p>
+              <p><strong>Next step:</strong> verify your email using the Supabase confirmation link.</p>
+              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin:14px 0">
+                <p style="margin:0 0 6px 0"><strong>If confirmation email does not arrive:</strong></p>
+                <ol style="margin:0;padding-left:18px">
+                  <li>Check spam/junk/promotions</li>
+                  <li>Wait 2-3 minutes</li>
+                  <li>Use resend from signup/login</li>
+                </ol>
+              </div>
+              <p style="font-size:13px;color:#475569">Super admins can only review and approve after verification is complete.</p>
+            </div>
+          `,
+        })
+      } catch (backupErr) {
+        console.warn('[Signup] Backup notification email failed:', backupErr.message)
+      }
     }
 
     // Return success - user will be created in callback/session after email verification

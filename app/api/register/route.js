@@ -340,25 +340,41 @@ export async function POST(request) {
     const { upsertParticipant } = await import('@/lib/drive-participant-helpers')
     await upsertParticipant(drive._id, donor._id, { source: 'public', status: 'registered' })
 
-    // Mark verification token as used
     await VerificationToken.useToken(verificationToken)
     console.log('[Register API] Verification token marked as used')
 
-    await VerificationToken.useToken(verificationToken)
-    console.log('[Register API] Verification token marked as used')
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const profileUrl = donor.donorToken ? `${appUrl}/donor/${donor.donorToken}` : null
+
+    if (donor.email && profileUrl) {
+      try {
+        const Organization = (await import('@/lib/models/Organization')).default
+        const org = await Organization.findById(drive.organizationId).select('name').lean()
+        const { sendDonorDriveRegistrationEmail } = await import('@/lib/org-onboarding/emails')
+        await sendDonorDriveRegistrationEmail({
+          to: donor.email,
+          donorName: `${firstName} ${lastName}`,
+          driveName: drive.name,
+          profileUrl,
+          organizationName: org?.name || '',
+        })
+      } catch (emailErr) {
+        console.warn('[Register API] Donor welcome email failed:', emailErr.message)
+      }
+    }
 
     const duration = Date.now() - startTime
     console.log('[Register API] Registration completed successfully in', duration, 'ms')
 
     return NextResponse.json({
       success: true,
-      message: 'Registration successful! You can now access your donor profile.',
+      message: 'Registration successful! Check your email for your donor profile link.',
       data: {
         donorId: donor._id.toString(),
         donorToken: donor.donorToken,
         fullName: `${firstName} ${lastName}`,
         bloodType,
-        profileUrl: donor.donorToken ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/donor/${donor.donorToken}` : null,
+        profileUrl,
       },
     }, { status: 201 })
   } catch (error) {

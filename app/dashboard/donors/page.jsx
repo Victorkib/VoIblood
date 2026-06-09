@@ -8,6 +8,8 @@ import { Plus, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/components/auth/auth-provider'
 import { AddDonorModal } from '@/components/modals/add-donor-modal'
+import { OrgFeatureLayout } from '@/components/dashboard/org-route-guard'
+import { useOrganizationId } from '@/lib/dashboard/use-organization-id'
 
 export default function DonorsPage() {
   const router = useRouter()
@@ -20,6 +22,7 @@ export default function DonorsPage() {
   const [page, setPage] = useState(1)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const { user, isLoading: authLoading } = useAuth()
+  const organizationId = useOrganizationId()
 
   useEffect(() => {
     // Don't fetch data while auth is still loading
@@ -49,39 +52,6 @@ export default function DonorsPage() {
           return
         }
 
-        // Handle super admin viewing organization context
-        let organizationId = user.organizationId
-        
-        // For super admins, check if they're viewing a specific organization
-        if (user?.role === 'super_admin') {
-          try {
-            const sessionResponse = await fetch('/api/auth/session')
-            if (sessionResponse.ok) {
-              const sessionData = await sessionResponse.json()
-              if (sessionData.user?.viewingOrganizationId) {
-                organizationId = sessionData.user.viewingOrganizationId
-              }
-            }
-          } catch (sessionError) {
-            console.log('[Donors] Could not check session context:', sessionError.message)
-          }
-          
-          // If still no organization ID, get first available organization
-          if (!organizationId) {
-            try {
-              const orgsResponse = await fetch('/api/admin/organizations')
-              if (orgsResponse.ok) {
-                const orgsData = await orgsResponse.json()
-                if (orgsData.data && orgsData.data.length > 0) {
-                  organizationId = orgsData.data[0].id
-                }
-              }
-            } catch (orgsError) {
-              console.log('[Donors] Could not fetch organizations:', orgsError.message)
-            }
-          }
-        }
-        
         if (!organizationId) {
           if (user?.role === 'super_admin') {
             setError('No organization selected. Please select an organization to view.')
@@ -123,7 +93,7 @@ export default function DonorsPage() {
     }, 300)
 
     return () => clearTimeout(debounceTimer)
-  }, [user, authLoading, search, page, selectedDrive])
+  }, [user, authLoading, search, page, selectedDrive, organizationId])
 
   const formatLastDonation = (date) => {
     if (!date) return 'Never'
@@ -143,19 +113,15 @@ export default function DonorsPage() {
   // Show loading while auth is initializing or data is loading
   if (authLoading || loading) {
     return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Donors</h1>
-            <p className="mt-2 text-foreground/60">Manage donor information and eligibility</p>
-          </div>
+      <OrgFeatureLayout
+        feature="donors"
+        actions={
           <Button className="gap-2" disabled>
             <Plus className="w-4 h-4" />
-            Add Donor
+            Add donor
           </Button>
-        </div>
-
+        }
+      >
         {/* Loading skeleton table */}
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
@@ -185,7 +151,7 @@ export default function DonorsPage() {
             </table>
           </div>
         </Card>
-      </div>
+      </OrgFeatureLayout>
     )
   }
 
@@ -200,24 +166,20 @@ export default function DonorsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Donors</h1>
-          <p className="mt-2 text-foreground/60">Manage donor information and eligibility</p>
-        </div>
+    <OrgFeatureLayout
+      feature="donors"
+      actions={
         <Button className="gap-2" onClick={() => setIsModalOpen(true)}>
           <Plus className="w-4 h-4" />
-          Add Donor
+          Add donor
         </Button>
-      </div>
-
+      }
+    >
       <AddDonorModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleAddDonorSuccess}
-        organizationId={user.organizationId || user.id}
+        organizationId={organizationId}
       />
 
       {/* Search and Filter */}
@@ -332,6 +294,6 @@ export default function DonorsPage() {
           </div>
         </Card>
       )}
-    </div>
+    </OrgFeatureLayout>
   )
 }

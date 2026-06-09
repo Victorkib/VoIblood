@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Download, Calendar, Package, Users, TrendingUp, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/components/auth/auth-provider'
+import { OrgFeatureLayout } from '@/components/dashboard/org-route-guard'
+import { useOrganizationId } from '@/lib/dashboard/use-organization-id'
 
 export default function ReportsPage() {
   const [stats, setStats] = useState(null)
@@ -15,13 +17,14 @@ export default function ReportsPage() {
   const [endDate, setEndDate] = useState('')
   const [format, setFormat] = useState('pdf')
   const { user } = useAuth()
+  const organizationId = useOrganizationId()
+  const orgType = user?.organizationType || 'blood_bank'
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        if (!user) return
+        if (!user || !organizationId) return
 
-        const organizationId = user.organizationId || user.id
         const response = await fetch(`/api/dashboard/stats?organizationId=${organizationId}`)
 
         if (!response.ok) throw new Error('Failed to fetch stats')
@@ -38,7 +41,7 @@ export default function ReportsPage() {
     }
 
     fetchStats()
-  }, [user])
+  }, [user, organizationId])
 
   const reports = [
     {
@@ -129,14 +132,11 @@ export default function ReportsPage() {
     )
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Reports & Analytics</h1>
-        <p className="mt-2 text-foreground/60">View comprehensive reports and data insights</p>
-      </div>
+  const showInventoryMetrics = orgType !== 'ngo'
+  const showDonorMetrics = ['blood_bank', 'ngo'].includes(orgType)
 
+  return (
+    <OrgFeatureLayout feature="reports">
       {error && (
         <Card className="p-6 border-red-500/50 bg-red-500/5">
           <p className="text-red-600">Error: {error}</p>
@@ -146,22 +146,38 @@ export default function ReportsPage() {
       {/* Key Metrics */}
       {!loading && stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4">
-            <p className="text-sm text-foreground/60 mb-1">Total Units in Stock</p>
-            <p className="text-2xl font-bold text-foreground">{stats.inventory.totalUnits}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-sm text-foreground/60 mb-1">Active Donors</p>
-            <p className="text-2xl font-bold text-foreground">{stats.donors.available}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-sm text-foreground/60 mb-1">Pending Requests</p>
-            <p className="text-2xl font-bold text-foreground">{stats.requests.pending}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-sm text-foreground/60 mb-1">Units Expiring</p>
-            <p className="text-2xl font-bold text-red-600">{stats.inventory.alerts.expiring}</p>
-          </Card>
+          {showInventoryMetrics && (
+            <>
+              <Card className="p-4">
+                <p className="text-sm text-foreground/60 mb-1">Total units in stock</p>
+                <p className="text-2xl font-bold text-foreground">{stats.inventory?.totalUnits ?? 0}</p>
+              </Card>
+              <Card className="p-4">
+                <p className="text-sm text-foreground/60 mb-1">Units expiring</p>
+                <p className="text-2xl font-bold text-red-600">{stats.inventory?.alerts?.expiring ?? 0}</p>
+              </Card>
+            </>
+          )}
+          {showDonorMetrics && (
+            <Card className="p-4">
+              <p className="text-sm text-foreground/60 mb-1">Active donors</p>
+              <p className="text-2xl font-bold text-foreground">{stats.donors?.available ?? 0}</p>
+            </Card>
+          )}
+          {orgType !== 'ngo' && (
+            <Card className="p-4">
+              <p className="text-sm text-foreground/60 mb-1">Pending requests</p>
+              <p className="text-2xl font-bold text-foreground">
+                {stats.requests?.incomingPending ?? stats.requests?.outgoingPending ?? stats.requests?.pending ?? 0}
+              </p>
+            </Card>
+          )}
+          {orgType === 'ngo' && (
+            <Card className="p-4">
+              <p className="text-sm text-foreground/60 mb-1">Active drives</p>
+              <p className="text-2xl font-bold text-foreground">{stats.drives?.active ?? 0}</p>
+            </Card>
+          )}
         </div>
       )}
 
@@ -258,6 +274,6 @@ export default function ReportsPage() {
           </div>
         </Card>
       )}
-    </div>
+    </OrgFeatureLayout>
   )
 }

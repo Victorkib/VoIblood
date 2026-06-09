@@ -6,7 +6,28 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AuthCard } from '@/components/auth/auth-card'
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
+import { createBrowserClient } from '@/lib/supabase'
 import { Droplet, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+
+function parseTokensFromUrl(searchParams) {
+  if (typeof window === 'undefined') return { accessToken: null, refreshToken: null }
+
+  const fromQuery = {
+    accessToken: searchParams.get('access_token'),
+    refreshToken: searchParams.get('refresh_token'),
+  }
+  if (fromQuery.accessToken && fromQuery.refreshToken) return fromQuery
+
+  const hash = window.location.hash?.replace(/^#/, '')
+  if (hash) {
+    const hashParams = new URLSearchParams(hash)
+    const accessToken = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
+    if (accessToken && refreshToken) return { accessToken, refreshToken }
+  }
+
+  return { accessToken: null, refreshToken: null }
+}
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -16,18 +37,71 @@ function ResetPasswordForm() {
     confirmPassword: '',
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [bootstrapping, setBootstrapping] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-  const [isTokenValid, setIsTokenValid] = useState(true)
+  const [tokens, setTokens] = useState({ accessToken: null, refreshToken: null })
+  const [isTokenValid, setIsTokenValid] = useState(false)
 
-  // Check if we have the required tokens in URL
   useEffect(() => {
-    const accessToken = searchParams.get('access_token')
-    const refreshToken = searchParams.get('refresh_token')
-    
-    if (!accessToken || !refreshToken) {
-      setIsTokenValid(false)
-      setError('Invalid or expired reset link. Please request a new password reset.')
+    let cancelled = false
+
+    async function bootstrap() {
+      const parsed = parseTokensFromUrl(searchParams)
+      if (parsed.accessToken && parsed.refreshToken) {
+        if (!cancelled) {
+          setTokens(parsed)
+          setIsTokenValid(true)
+          setBootstrapping(false)
+        }
+        return
+      }
+
+      const code = searchParams.get('code')
+      const supabase = createBrowserClient()
+
+      try {
+        if (code && supabase.auth?.exchangeCodeForSession) {
+          const { data, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code)
+          if (!exchangeErr && data?.session) {
+            if (!cancelled) {
+              setTokens({
+                accessToken: data.session.access_token,
+                refreshToken: data.session.refresh_token,
+              })
+              setIsTokenValid(true)
+              setBootstrapping(false)
+            }
+            return
+          }
+        }
+
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token && session?.refresh_token) {
+          if (!cancelled) {
+            setTokens({
+              accessToken: session.access_token,
+              refreshToken: session.refresh_token,
+            })
+            setIsTokenValid(true)
+            setBootstrapping(false)
+          }
+          return
+        }
+      } catch (err) {
+        console.warn('[reset-password] session bootstrap failed', err)
+      }
+
+      if (!cancelled) {
+        setIsTokenValid(false)
+        setError('Invalid or expired reset link. Please request a new password reset.')
+        setBootstrapping(false)
+      }
+    }
+
+    bootstrap()
+    return () => {
+      cancelled = true
     }
   }, [searchParams])
 
@@ -45,20 +119,22 @@ function ResetPasswordForm() {
       return
     }
 
+    if (!tokens.accessToken || !tokens.refreshToken) {
+      setError('Session expired. Request a new reset link.')
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      const accessToken = searchParams.get('access_token')
-      const refreshToken = searchParams.get('refresh_token')
-
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // CRITICAL: Send cookies (auth-session)
+        credentials: 'include',
         body: JSON.stringify({
           password: formData.password,
-          accessToken,
-          refreshToken,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
         }),
       })
 
@@ -78,7 +154,17 @@ function ResetPasswordForm() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  if (bootstrapping) {
+    return (
+      <AuthCard title="Verifying link…" description="Please wait">
+        <div className="flex justify-center py-8">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </AuthCard>
+    )
   }
 
   if (!isTokenValid) {
@@ -91,21 +177,12 @@ function ResetPasswordForm() {
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
             <AlertCircle className="w-8 h-8 text-red-600" />
           </div>
-          <p className="text-foreground">
-            {error}
-          </p>
+          <p className="text-foreground">{error}</p>
           <div className="space-y-2">
-            <Button 
-              onClick={() => router.push('/auth/forgot-password')} 
-              className="w-full"
-            >
+            <Button onClick={() => router.push('/auth/forgot-password')} className="w-full">
               Request New Reset Link
             </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => router.push('/auth/login')} 
-              className="w-full"
-            >
+            <Button variant="outline" onClick={() => router.push('/auth/login')} className="w-full">
               Back to Sign In
             </Button>
           </div>
@@ -116,10 +193,7 @@ function ResetPasswordForm() {
 
   if (success) {
     return (
-      <AuthCard
-        title="Password Reset Successful"
-        description="Your password has been updated"
-      >
+      <AuthCard title="Password Reset Successful" description="Your password has been updated">
         <div className="text-center space-y-4">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
             <CheckCircle className="w-8 h-8 text-green-600" />
@@ -127,10 +201,7 @@ function ResetPasswordForm() {
           <p className="text-foreground">
             Your password has been successfully reset. You can now sign in with your new password.
           </p>
-          <Button 
-            onClick={() => router.push('/auth/login')} 
-            className="w-full"
-          >
+          <Button onClick={() => router.push('/auth/login')} className="w-full">
             Sign In with New Password
           </Button>
         </div>
@@ -139,10 +210,7 @@ function ResetPasswordForm() {
   }
 
   return (
-    <AuthCard
-      title="Set New Password"
-      description="Create your new password"
-    >
+    <AuthCard title="Set New Password" description="Create your new password">
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && (
           <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800 border border-red-200">
@@ -152,7 +220,7 @@ function ResetPasswordForm() {
 
         <div className="text-center mb-4">
           <p className="text-sm text-foreground/60">
-            Enter your new password below. Make sure it's at least 6 characters long.
+            Enter your new password below. Make sure it&apos;s at least 6 characters long.
           </p>
         </div>
 
@@ -205,10 +273,9 @@ function ResetPasswordForm() {
           )}
         </Button>
 
-        {/* Security Notice */}
         <div className="mt-6 flex items-center justify-center gap-2 text-xs text-foreground/50">
           <Droplet className="w-3 h-3 text-primary" />
-          <span>Secure password reset powered by Supabase</span>
+          <span>Secure password reset</span>
         </div>
       </form>
     </AuthCard>
@@ -217,11 +284,13 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      }
+    >
       <ResetPasswordForm />
     </Suspense>
   )

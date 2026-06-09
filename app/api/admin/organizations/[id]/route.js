@@ -62,6 +62,10 @@ export async function GET(request, { params }) {
         accountStatus: organization.accountStatus,
         isPremium: organization.isPremium,
         subscriptionPlan: organization.subscriptionPlan,
+        rewardsProgram: organization.rewardsProgram || {
+          partnerActive: false,
+          partnerOverride: false,
+        },
         createdAt: organization.createdAt,
         updatedAt: organization.updatedAt,
       },
@@ -91,9 +95,12 @@ export async function PUT(request, { params }) {
       )
     }
 
+    const resolvedParams = await params
+    const { id: orgId } = resolvedParams
+
     const body = await request.json()
     
-    const organization = await Organization.findById(params.id)
+    const organization = await Organization.findById(orgId)
     
     if (!organization) {
       return NextResponse.json(
@@ -114,6 +121,21 @@ export async function PUT(request, { params }) {
     if (body.country) organization.country = body.country
     if (typeof body.isActive === 'boolean') organization.isActive = body.isActive
     if (body.accountStatus) organization.accountStatus = body.accountStatus
+    if (body.subscriptionPlan) organization.subscriptionPlan = body.subscriptionPlan
+
+    if (body.rewardsProgram && organization.type === 'hospital') {
+      organization.rewardsProgram = organization.rewardsProgram || {}
+      if (typeof body.rewardsProgram.partnerActive === 'boolean') {
+        organization.rewardsProgram.partnerActive = body.rewardsProgram.partnerActive
+        if (body.rewardsProgram.partnerActive && !organization.rewardsProgram.partnerSince) {
+          organization.rewardsProgram.partnerSince = new Date()
+        }
+      }
+      if (typeof body.rewardsProgram.partnerOverride === 'boolean') {
+        organization.rewardsProgram.partnerOverride = body.rewardsProgram.partnerOverride
+      }
+      organization.markModified('rewardsProgram')
+    }
 
     await organization.save()
 

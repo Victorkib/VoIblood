@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useState } from 'react'
 import { useAuth } from '@/components/auth/auth-provider'
+import { getOrgExperience, ORG_TYPE_LABELS } from '@/lib/dashboard/org-experience'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +48,13 @@ export function TopNav() {
     )
   }
 
+  const orgType = user?.organizationType || 'blood_bank'
+  const experience = getOrgExperience(orgType, {
+    rewardsPartnerActive: user?.rewardsPartnerActive,
+    isOrgAdmin: user?.role === 'org_admin',
+    isSuperAdmin: user?.role === 'super_admin',
+  })
+
   const getRoleBadge = (role) => {
     const variants = {
       super_admin: 'bg-purple-100 text-purple-800',
@@ -78,7 +86,7 @@ export function TopNav() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
             <Input
               type="search"
-              placeholder="Search donors, inventory..."
+              placeholder={experience.searchPlaceholder}
               className="pl-10 bg-secondary/20 border-0"
             />
           </div>
@@ -88,13 +96,20 @@ export function TopNav() {
         <div className="flex items-center gap-4">
           {/* Organization Badge - For org members */}
           {user?.organizationId && user?.role !== 'super_admin' && (
-            <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-              <Building2 className="w-4 h-4 text-blue-600" />
-              <div className="flex flex-col">
-                <span className="text-xs font-semibold text-blue-900">{user.organizationName}</span>
-                <Badge className={`text-xs px-1 py-0 ${getRoleBadge(user.role)}`}>
-                  {user.role?.replace('_', ' ')}
-                </Badge>
+            <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-muted/50 border rounded-lg">
+              <Building2 className="w-4 h-4 text-primary" />
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-semibold truncate max-w-[140px]">
+                  {user.organizationName}
+                </span>
+                <div className="flex gap-1 flex-wrap">
+                  <Badge variant="outline" className="text-[10px] px-1 py-0">
+                    {ORG_TYPE_LABELS[orgType] || orgType}
+                  </Badge>
+                  <Badge className={`text-[10px] px-1 py-0 ${getRoleBadge(user.role)}`}>
+                    {user.role?.replace('_', ' ')}
+                  </Badge>
+                </div>
               </div>
             </div>
           )}

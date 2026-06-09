@@ -22,6 +22,7 @@ import {
   FileText,
   Activity,
 } from 'lucide-react'
+import { OrgRouteGuard } from '@/components/dashboard/org-route-guard'
 
 const statusConfig = {
   registered: { label: 'Registered', color: 'bg-gray-100 text-gray-800', icon: Clock },
@@ -128,7 +129,8 @@ export default function DonorDetailsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <OrgRouteGuard feature="donors">
+    <div className="space-y-6 max-w-7xl mx-auto w-full">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -377,5 +379,6 @@ export default function DonorDetailsPage() {
         </Card>
       )}
     </div>
+    </OrgRouteGuard>
   )
 }

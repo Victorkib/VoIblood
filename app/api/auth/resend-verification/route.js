@@ -10,6 +10,7 @@ import { createServerClient } from '@/lib/supabase'
 import { connectDB } from '@/lib/db'
 import User from '@/lib/models/User'
 import { checkAuthRateLimit } from '@/lib/auth-rate-limiter'
+import { sendEmail } from '@/lib/email-service'
 
 export async function POST(request) {
   try {
@@ -74,9 +75,40 @@ export async function POST(request) {
 
     if (error) {
       console.error('Resend verification error:', error)
+      let fallbackSent = false
+      try {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        await sendEmail({
+          to: email.toLowerCase(),
+          subject: 'iBlood: verification resend requested',
+          text: [
+            'We received your resend request.',
+            'Our verification provider reported a temporary issue while sending the confirmation email.',
+            '',
+            'Please retry shortly from:',
+            `${appUrl}/auth/signup`,
+            '',
+            'If this persists, contact support and share your signup email address.',
+          ].join('\n'),
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:20px">
+              <h3>Verification resend requested</h3>
+              <p>We received your resend request, but our verification provider reported a temporary issue.</p>
+              <p>Please retry from the signup page in a few minutes.</p>
+              <p style="font-size:13px;color:#475569">If this persists, contact support with your signup email address.</p>
+            </div>
+          `,
+        })
+        fallbackSent = true
+      } catch (fallbackErr) {
+        console.warn('Resend fallback email failed:', fallbackErr.message)
+      }
       return NextResponse.json(
-        { error: 'Failed to send verification email. Please try again.' },
-        { status: 500 }
+        {
+          error: 'Failed to send verification email. Please try again shortly.',
+          fallbackNotificationSent: fallbackSent,
+        },
+        { status: 502 }
       )
     }
 

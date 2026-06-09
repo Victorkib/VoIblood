@@ -324,6 +324,7 @@ export async function POST(request) {
             donorName: `${donor.firstName} ${donor.lastName}`,
             driveName: body.driveName || organization.name || 'Blood donation program',
             appointmentDate: body.appointmentDate || undefined,
+            donorToken: donor.donorToken,
           })
         }
       } catch (emailErr) {

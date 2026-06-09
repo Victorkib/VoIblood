@@ -9,6 +9,8 @@ import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import Donor from '@/lib/models/Donor'
 import DriveParticipant from '@/lib/models/DriveParticipant'
+import { GRATITUDE_POINTS_PER_DONATION, REDEMPTION_DISCLAIMER } from '@/lib/gratitude-points/constants'
+import { findWalletForDonor } from '@/lib/gratitude-points/wallet-service'
 
 /**
  * GET /api/donors/profile/[token]
@@ -116,6 +118,22 @@ export async function GET(request, { params }) {
         !['completed', 'no_show', 'cancelled'].includes(p.participantStatus)
     )
 
+    let gratitudeWallet = null
+    try {
+      const wallet = await findWalletForDonor(donor)
+      if (wallet) {
+        gratitudeWallet = {
+          balance: wallet.balance,
+          lifetimeEarned: wallet.lifetimeEarned,
+          lifetimeRedeemed: wallet.lifetimeRedeemed,
+          pointsPerDonation: GRATITUDE_POINTS_PER_DONATION,
+          disclaimer: REDEMPTION_DISCLAIMER,
+        }
+      }
+    } catch {
+      gratitudeWallet = null
+    }
+
     const donorData = {
       id: donor._id.toString(),
       donorToken: donor.donorToken,
@@ -141,6 +159,7 @@ export async function GET(request, { params }) {
       organizationId: donor.organizationId?.toString(),
       driveParticipations,
       upcomingDriveParticipations,
+      gratitudeWallet,
     }
 
     return NextResponse.json({

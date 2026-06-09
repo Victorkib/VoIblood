@@ -13,6 +13,7 @@ import { connectDB } from '@/lib/db'
 import User from '@/lib/models/User'
 import OrganizationRequest from '@/lib/models/OrganizationRequest'
 import { sendRequestReceivedEmail } from '@/lib/org-request-emails'
+import { notifySuperAdminsOfOrgRequest } from '@/lib/org-onboarding/notify-super-admin'
 
 export async function GET(request) {
   try {
@@ -147,9 +148,29 @@ export async function GET(request) {
           } catch (emailErr) {
             console.warn('[Session] Failed to send email:', emailErr.message)
           }
+
+          try {
+            await notifySuperAdminsOfOrgRequest(orgRequest, user)
+          } catch (notifyErr) {
+            console.warn('[Session] Super admin notify failed:', notifyErr.message)
+          }
         }
       } catch (orgErr) {
         console.warn('[Session] Failed to update OrganizationRequest:', orgErr.message)
+      }
+    }
+
+    let organizationType = null
+    let rewardsPartnerActive = false
+    if (user.organizationId) {
+      const Organization = (await import('@/lib/models/Organization')).default
+      const org = await Organization.findById(user.organizationId)
+        .select('type rewardsProgram subscriptionPlan isActive accountStatus')
+        .lean()
+      if (org) {
+        organizationType = org.type
+        const { isRewardsPartnerHospital } = await import('@/lib/gratitude-points/hospital-access')
+        rewardsPartnerActive = isRewardsPartnerHospital(org)
       }
     }
 
@@ -162,7 +183,11 @@ export async function GET(request) {
         fullName: user.fullName,
         role: user.role,
         organizationId: user.organizationId?.toString(),
+        viewingOrganizationId: session.viewingOrganizationId || null,
+        viewingOrganizationName: session.viewingOrganizationName || null,
         organizationName: user.organizationName,
+        organizationType,
+        rewardsPartnerActive,
         accountStatus: user.accountStatus,
         avatarUrl: user.avatarUrl,
         initials: user.initials,
@@ -182,6 +207,8 @@ export async function GET(request) {
           role: user.role,
           organizationId: user.organizationId?.toString(),
           organizationName: user.organizationName,
+          organizationType,
+          rewardsPartnerActive,
           accountStatus: user.accountStatus,
         },
         token: session.token,

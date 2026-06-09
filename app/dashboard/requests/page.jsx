@@ -8,6 +8,8 @@ import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/components/auth/auth-provider'
 import { NewRequestModal } from '@/components/modals/new-request-modal'
+import { OrgFeatureLayout } from '@/components/dashboard/org-route-guard'
+import { useOrganizationId } from '@/lib/dashboard/use-organization-id'
 
 export default function RequestsPage() {
   const router = useRouter()
@@ -18,6 +20,8 @@ export default function RequestsPage() {
   const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const { user } = useAuth()
+  const organizationId = useOrganizationId()
+  const orgType = user?.organizationType || 'blood_bank'
 
   const statuses = {
     pending: { label: 'Pending', color: 'bg-primary/10 text-primary' },
@@ -31,9 +35,8 @@ export default function RequestsPage() {
   useEffect(() => {
     const fetchRequests = async () => {
       try {
-        if (!user) return
+        if (!user || !organizationId) return
 
-        const organizationId = user.organizationId || user.id
         const params = new URLSearchParams({
           organizationId,
           search: search || '',
@@ -64,14 +67,13 @@ export default function RequestsPage() {
     }, 300)
 
     return () => clearTimeout(debounceTimer)
-  }, [user, search])
+  }, [user, search, organizationId])
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        if (!user) return
+        if (!user || !organizationId) return
 
-        const organizationId = user.organizationId || user.id
         const response = await fetch(`/api/dashboard/stats?organizationId=${organizationId}`)
 
         if (!response.ok) throw new Error('Failed to fetch stats')
@@ -84,7 +86,7 @@ export default function RequestsPage() {
     }
 
     fetchStats()
-  }, [user])
+  }, [user, organizationId])
 
   const formatDate = (date) => {
     const now = new Date()
@@ -120,33 +122,42 @@ export default function RequestsPage() {
     )
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Hospital Requests</h1>
-          <p className="mt-2 text-foreground/60">Manage blood requests from hospitals and healthcare facilities</p>
-        </div>
-        <Button onClick={() => setIsModalOpen(true)}>New Request</Button>
-      </div>
+  const summaryCards =
+    orgType === 'hospital'
+      ? [
+          { label: 'Pending', value: stats?.requests?.outgoingPending ?? stats?.requests?.pending ?? 0, color: 'bg-primary/10 text-primary' },
+          { label: 'Approved', value: stats?.requests?.approved ?? 0, color: 'bg-secondary/10 text-secondary' },
+          { label: 'Fulfilled (Month)', value: stats?.requests?.fulfilledThisMonth ?? 0, color: 'bg-accent/10 text-accent' },
+          { label: 'Units in stock', value: stats?.inventory?.totalUnits ?? 0, color: 'bg-orange-500/10 text-orange-700' },
+        ]
+      : [
+          { label: 'Pending', value: stats?.requests?.incomingPending ?? stats?.requests?.pending ?? 0, color: 'bg-primary/10 text-primary' },
+          { label: 'Approved', value: stats?.requests?.approved ?? 0, color: 'bg-secondary/10 text-secondary' },
+          { label: 'Fulfilled (Month)', value: stats?.requests?.fulfilledThisMonth ?? 0, color: 'bg-accent/10 text-accent' },
+          { label: 'Donations (Month)', value: stats?.activities?.donationsThisMonth ?? 0, color: 'bg-green-500/10 text-green-700' },
+        ]
+  const orgColumnLabel = orgType === 'hospital' ? 'Destination' : 'Requesting Hospital'
 
+  return (
+    <OrgFeatureLayout
+      feature="requests"
+      actions={
+        orgType === 'hospital' ? (
+          <Button onClick={() => setIsModalOpen(true)}>New blood request</Button>
+        ) : null
+      }
+    >
       <NewRequestModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleCreateRequestSuccess}
-        organizationId={user.organizationId || user.id}
+        organizationId={organizationId}
       />
 
       {/* Summary Cards */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[
-            { label: 'Pending', value: stats.requests.pending, color: 'bg-primary/10 text-primary' },
-            { label: 'Approved', value: stats.requests.approved, color: 'bg-secondary/10 text-secondary' },
-            { label: 'Fulfilled (Month)', value: stats.requests.fulfilledThisMonth, color: 'bg-accent/10 text-accent' },
-            { label: 'Total Donors (Month)', value: stats.activities.donationsThisMonth, color: 'bg-green-500/10 text-green-700' },
-          ].map((stat, idx) => (
+          {summaryCards.map((stat, idx) => (
             <Card key={idx} className="p-4">
               <p className="text-sm text-foreground/60 mb-2">{stat.label}</p>
               <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
@@ -162,7 +173,11 @@ export default function RequestsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
             <Input
               type="search"
-              placeholder="Search by hospital name or request ID..."
+              placeholder={
+                orgType === 'hospital'
+                  ? 'Search your requests by patient or request ID...'
+                  : 'Search incoming requests by hospital or request ID...'
+              }
               className="pl-10"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -197,7 +212,7 @@ export default function RequestsPage() {
                 <thead className="border-b border-border bg-secondary/5">
                   <tr>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Request ID</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Hospital</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">{orgColumnLabel}</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Blood Type</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Quantity</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Status</th>
@@ -231,7 +246,7 @@ export default function RequestsPage() {
               <thead className="border-b border-border bg-secondary/5">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Request ID</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Hospital</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">{orgColumnLabel}</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Blood Type</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Quantity</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Status</th>
@@ -246,7 +261,9 @@ export default function RequestsPage() {
                     return (
                       <tr key={req._id} className="hover:bg-secondary/5 transition">
                         <td className="px-6 py-4 text-sm font-medium text-foreground">{req.requestId}</td>
-                        <td className="px-6 py-4 text-sm text-foreground/60">{req.requestingOrganizationName}</td>
+                        <td className="px-6 py-4 text-sm text-foreground/60">
+                          {req.counterpartOrganizationName || req.requestingOrganizationName}
+                        </td>
                         <td className="px-6 py-4 text-sm">
                           <span className="inline-flex items-center rounded-full bg-secondary/10 px-3 py-1 text-xs font-medium text-secondary">
                             {getBloodTypesList(req.bloodRequirements)}
@@ -282,6 +299,6 @@ export default function RequestsPage() {
           </div>
         </Card>
       )}
-    </div>
+    </OrgFeatureLayout>
   )
 }

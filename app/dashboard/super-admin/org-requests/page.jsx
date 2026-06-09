@@ -25,7 +25,12 @@ import {
   Calendar,
   Eye,
   AlertCircle,
+  MapPin,
+  Phone,
+  Sparkles,
 } from 'lucide-react'
+import { toast } from '@/hooks/use-toast'
+import Link from 'next/link'
 
 const orgTypeLabels = {
   blood_bank: 'Blood Bank',
@@ -90,7 +95,11 @@ export default function OrgRequestsPage() {
     if (!selectedRequest) return
 
     if (action === 'reject' && !rejectionReason.trim()) {
-      alert('Please provide a rejection reason')
+      toast({
+        title: 'Rejection reason required',
+        description: 'Please explain why this request is being rejected.',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -113,15 +122,29 @@ export default function OrgRequestsPage() {
         setIsDialogOpen(false)
         fetchRequests()
         if (action === 'approve') {
-          alert(`✅ Organization "${data.data.organizationName}" created successfully! User assigned as org_admin.`)
+          toast({
+            title: 'Organization approved',
+            description: `"${data.data?.organizationName}" is live. The requester is now org admin.`,
+          })
         } else {
-          alert('✅ Request rejected successfully')
+          toast({
+            title: 'Request rejected',
+            description: 'The applicant has been notified by email.',
+          })
         }
       } else {
-        alert(data.error || 'Failed to process request')
+        toast({
+          title: 'Action failed',
+          description: data.error || 'Failed to process request',
+          variant: 'destructive',
+        })
       }
     } catch (err) {
-      alert('Failed to process request')
+      toast({
+        title: 'Network error',
+        description: 'Could not reach the server. Try again.',
+        variant: 'destructive',
+      })
     } finally {
       setActionLoading(false)
     }
@@ -138,13 +161,27 @@ export default function OrgRequestsPage() {
     )
   }
 
+  const requesterEmail = (req) => req.userId?.email || req.userEmail
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Organization Creation Requests</h1>
-          <p className="mt-2 text-foreground/60">Review and approve/deny requests to create new organizations</p>
+    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-violet-600/10 via-background to-purple-500/5 p-8">
+        <div className="relative z-10 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+              <Sparkles className="h-3.5 w-3.5" />
+              Platform onboarding
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              Organization requests
+            </h1>
+            <p className="mt-2 max-w-xl text-foreground/60">
+              Review self-signup applications. Approved requests create a live organization and assign the applicant as org admin.
+            </p>
+          </div>
+          <Badge variant="secondary" className="w-fit text-sm px-3 py-1">
+            {requests.length} shown
+          </Badge>
         </div>
       </div>
 
@@ -158,6 +195,7 @@ export default function OrgRequestsPage() {
             className="px-4 py-2 border border-border rounded-lg bg-background text-foreground text-sm"
           >
             <option value="pending">Pending Only</option>
+            <option value="pending_email_verification">Awaiting Email Verification</option>
             <option value="all">All Requests</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
@@ -182,7 +220,11 @@ export default function OrgRequestsPage() {
         <Card className="p-12 text-center">
           <Building2 className="w-16 h-16 text-foreground/20 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-foreground">No Requests Found</h3>
-          <p className="text-foreground/60 mt-2">No organization creation requests at this time</p>
+          <p className="text-foreground/60 mt-2">
+            {filter === 'pending_email_verification'
+              ? 'No requests are waiting for applicant email verification right now.'
+              : 'No organization creation requests at this time'}
+          </p>
         </Card>
       ) : (
         <div className="space-y-4">
@@ -197,10 +239,15 @@ export default function OrgRequestsPage() {
                       </div>
                       <div>
                         <h3 className="font-semibold text-lg">{req.requestedOrgName}</h3>
-                        <p className="text-sm text-foreground/60">Requested by {req.userId?.fullName}</p>
+                        <p className="text-sm text-foreground/60">
+                          {req.userId?.fullName || requesterEmail(req) || 'Pending verification'}
+                        </p>
                       </div>
                       <Badge
                         className={
+                          req.status === 'pending_email_verification'
+                            ? 'bg-blue-100 text-blue-800'
+                            :
                           req.status === 'pending'
                             ? 'bg-yellow-100 text-yellow-800'
                             : req.status === 'approved'
@@ -208,11 +255,13 @@ export default function OrgRequestsPage() {
                             : 'bg-red-100 text-red-800'
                         }
                       >
-                        {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                        {req.status === 'pending_email_verification'
+                          ? 'Awaiting verification'
+                          : req.status.charAt(0).toUpperCase() + req.status.slice(1)}
                       </Badge>
                     </div>
 
-                    <div className="grid md:grid-cols-3 gap-4 text-sm">
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                       <div>
                         <p className="text-foreground/60">Organization Type</p>
                         <p className="font-medium">{orgTypeLabels[req.requestedOrgType] || req.requestedOrgType}</p>
@@ -220,10 +269,31 @@ export default function OrgRequestsPage() {
                       <div>
                         <p className="text-foreground/60">Requester Email</p>
                         <p className="font-medium flex items-center gap-1">
-                          <Mail className="w-3 h-3" />
-                          {req.userId?.email}
+                          <Mail className="w-3 h-3 shrink-0" />
+                          {requesterEmail(req) || '—'}
                         </p>
                       </div>
+                      {(req.requestedOrgPhone || req.requestedOrgCity) && (
+                        <div>
+                          <p className="text-foreground/60">Contact / Location</p>
+                          <p className="font-medium flex items-center gap-1">
+                            {req.requestedOrgPhone && (
+                              <>
+                                <Phone className="w-3 h-3 shrink-0" />
+                                {req.requestedOrgPhone}
+                              </>
+                            )}
+                          </p>
+                          {req.requestedOrgCity && (
+                            <p className="text-xs text-foreground/70 flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              {[req.requestedOrgAddress, req.requestedOrgCity, req.requestedOrgCountry]
+                                .filter(Boolean)
+                                .join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       <div>
                         <p className="text-foreground/60">Submitted</p>
                         <p className="font-medium flex items-center gap-1">
@@ -251,9 +321,11 @@ export default function OrgRequestsPage() {
                       Review
                     </Button>
                     {req.status === 'approved' && req.createdOrganizationId && (
-                      <Badge className="bg-green-100 text-green-800 text-xs">
-                        {req.createdOrganizationId.name}
-                      </Badge>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/dashboard/super-admin/organizations/${req.createdOrganizationId._id || req.createdOrganizationId}`}>
+                          View org
+                        </Link>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -294,6 +366,34 @@ export default function OrgRequestsPage() {
                     <p className="text-sm">{selectedRequest.requestedOrgDescription}</p>
                   </div>
                 )}
+                {(selectedRequest.requestedOrgPhone ||
+                  selectedRequest.requestedOrgAddress ||
+                  selectedRequest.requestedOrgCity) && (
+                  <div className="rounded-lg border bg-background/80 p-3 space-y-2">
+                    <p className="text-sm font-medium text-foreground/80">Location & contact</p>
+                    {selectedRequest.requestedOrgPhone && (
+                      <p className="text-sm flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-violet-600" />
+                        {selectedRequest.requestedOrgPhone}
+                      </p>
+                    )}
+                    {(selectedRequest.requestedOrgAddress || selectedRequest.requestedOrgCity) && (
+                      <p className="text-sm flex items-start gap-2">
+                        <MapPin className="w-4 h-4 text-violet-600 mt-0.5 shrink-0" />
+                        <span>
+                          {[
+                            selectedRequest.requestedOrgAddress,
+                            selectedRequest.requestedOrgCity,
+                            selectedRequest.requestedOrgState,
+                            selectedRequest.requestedOrgCountry,
+                          ]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Requester Info */}
@@ -304,7 +404,7 @@ export default function OrgRequestsPage() {
                 </h4>
                 <div className="space-y-1 text-sm">
                   <p><span className="text-foreground/60">Name:</span> {selectedRequest.userId?.fullName}</p>
-                  <p><span className="text-foreground/60">Email:</span> {selectedRequest.userId?.email}</p>
+                  <p><span className="text-foreground/60">Email:</span> {requesterEmail(selectedRequest)}</p>
                   {selectedRequest.userId?.bio && (
                     <p><span className="text-foreground/60">Bio:</span> {selectedRequest.userId.bio}</p>
                   )}
@@ -332,17 +432,15 @@ export default function OrgRequestsPage() {
                     />
                   </div>
 
-                  {selectedRequest.status === 'pending' && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-red-600">Rejection Reason *</label>
-                      <Textarea
-                        value={rejectionReason}
-                        onChange={(e) => setRejectionReason(e.target.value)}
-                        placeholder="Why is this request being rejected?"
-                        rows={2}
-                      />
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-red-600">Rejection reason (required to reject)</label>
+                    <Textarea
+                      value={rejectionReason}
+                      onChange={(e) => setRejectionReason(e.target.value)}
+                      placeholder="Why is this request being rejected?"
+                      rows={2}
+                    />
+                  </div>
 
                   <div className="flex gap-3 pt-2">
                     <Button

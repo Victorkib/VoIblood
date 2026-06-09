@@ -17,6 +17,7 @@ import {
   Award,
   Loader2,
 } from 'lucide-react'
+import { OrgFeatureLayout } from '@/components/dashboard/org-route-guard'
 
 export default function AnalyticsPage() {
   const router = useRouter()
@@ -134,30 +135,27 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Analytics Dashboard</h1>
-          <p className="mt-2 text-foreground/60">Track donation drive performance</p>
-        </div>
+    <OrgFeatureLayout
+      feature="analytics"
+      actions={
         <div className="flex gap-2">
           <select
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
-            className="px-4 py-2 border border-border rounded-lg bg-background text-foreground"
+            className="px-4 py-2 border border-border rounded-lg bg-background text-foreground text-sm"
           >
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
             <option value="365">Last year</option>
           </select>
-          <Button variant="outline">
+          <Button variant="outline" size="sm">
             <Download className="w-4 h-4 mr-2" />
-            Export Report
+            Export
           </Button>
         </div>
-      </div>
+      }
+    >
 
       {/* Overview Stats */}
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -349,6 +347,6 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </OrgFeatureLayout>
   )
 }

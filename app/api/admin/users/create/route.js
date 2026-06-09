@@ -13,12 +13,11 @@
  */
 
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase'
 import { connectDB } from '@/lib/db'
-import User from '@/lib/models/User'
 import Organization from '@/lib/models/Organization'
 import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
+import { createOrganizationAdminUser } from '@/lib/org-onboarding/create-org-admin'
 
 export async function POST(request) {
   try {
@@ -39,8 +38,7 @@ export async function POST(request) {
       fullName,
       role,
       organizationId,
-      temporaryPassword,
-      sendCredentials,
+      sendWelcomeEmail = true,
     } = body
 
     // Validation
@@ -84,62 +82,22 @@ export async function POST(request) {
       )
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() })
-    if (existingUser) {
-      return NextResponse.json(
-        { error: 'User with this email already exists' },
-        { status: 409 }
-      )
-    }
-
-    // Create Supabase client
-    const supabase = createServerClient()
-
-    // Generate temporary password if not provided
-    const password = temporaryPassword || generateSecurePassword()
-
-    // Create user in Supabase Auth
-    const { data: supabaseData, error: supabaseError } = await supabase.auth.admin.createUser({
-      email: email.toLowerCase(),
-      password: password,
-      email_confirm: true, // Auto-confirm email
-      user_metadata: {
-        full_name: fullName,
-        role: role,
-        organization_id: targetOrganizationId,
-      },
-      app_metadata: {
-        role: role,
-        organization_id: targetOrganizationId,
-      },
-    })
-
-    if (supabaseError) {
-      return NextResponse.json(
-        { error: `Failed to create user in Supabase: ${supabaseError.message}` },
-        { status: 500 }
-      )
-    }
-
-    // Create user in MongoDB
-    const mongoUser = await User.create({
-      supabaseId: supabaseData.user.id,
-      email: email.toLowerCase(),
-      fullName: fullName,
-      role: role,
+    const result = await createOrganizationAdminUser({
+      email,
+      fullName,
       organizationId: targetOrganizationId,
-      organizationName: organization.name,
-      accountStatus: 'active',
-      emailVerified: true,
-      invitedBy: currentUser._id,
-      providers: [{ provider: 'email', providerId: supabaseData.user.id }],
+      role,
+      invitedByUserId: currentUser._id,
+      sendWelcomeEmail: sendWelcomeEmail !== false,
     })
 
-    // Return user data with temporary password
+    const mongoUser = result.user
+
     return NextResponse.json({
       success: true,
-      message: 'User created successfully',
+      message: result.created
+        ? 'User created. Welcome email sent with sign-in instructions.'
+        : 'User already exists for this organization.',
       data: {
         user: {
           id: mongoUser._id.toString(),
@@ -149,13 +107,8 @@ export async function POST(request) {
           organizationId: mongoUser.organizationId?.toString(),
           organizationName: mongoUser.organizationName,
         },
-        credentials: {
-          email: email.toLowerCase(),
-          temporaryPassword: password,
-          mustChangePassword: true,
-        },
+        credentials: result.credentials,
       },
-      warning: 'Share these credentials securely with the user. They should change password on first login.',
     }, { status: 201 })
   } catch (error) {
     console.error('User creation error:', error)
@@ -164,15 +117,4 @@ export async function POST(request) {
       { status: 500 }
     )
   }
-}
-
-// Helper function to generate secure temporary password
-function generateSecurePassword() {
-  const length = 12
-  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*'
-  let password = ''
-  for (let i = 0; i < length; i++) {
-    password += charset.charAt(Math.floor(Math.random() * charset.length))
-  }
-  return password
 }
