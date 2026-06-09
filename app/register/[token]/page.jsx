@@ -131,10 +131,29 @@ export default function RegisterPage() {
     }))
   }
 
+  const formatOtpDeliveryMessage = (data) => {
+    if (data.method === 'email') {
+      return `Verification code sent to ${formData.email}. Check your inbox and spam folder.`
+    }
+    if (data.method === 'sms') {
+      return data.fallbackUsed
+        ? `We could not reach your email, so the code was sent via SMS to ${formData.phone}.`
+        : `Verification code sent via SMS to ${formData.phone}.`
+    }
+    if (data.method === 'console') {
+      return 'Verification code generated for demo mode. Check the server console if email and SMS are unavailable.'
+    }
+    return 'Verification code sent.'
+  }
+
   const handleSendOTP = async () => {
-    // Validate phone or email
-    if ((!formData.phone || formData.phone.length < 10) && !formData.email) {
-      setActionError('Please enter a valid phone number or email')
+    if (!formData.email) {
+      setActionError('Please enter your email address to receive the verification code')
+      return
+    }
+
+    if (!formData.phone || formData.phone.length < 10) {
+      setActionError('Please enter a valid phone number as a backup delivery option')
       return
     }
 
@@ -169,7 +188,7 @@ export default function RegisterPage() {
         setOtpResendDisabled(true)
         setOtpResendTimer(60) // 60 second cooldown
         setOtpAttempts(prev => prev + 1)
-        setActionSuccess(`OTP sent via ${data.method || 'SMS'}! (${otpAttempts + 1}/${maxOtpAttempts})`)
+        setActionSuccess(`${formatOtpDeliveryMessage(data)} (${otpAttempts + 1}/${maxOtpAttempts})`)
         
         // Start countdown timer
         const timer = setInterval(() => {
@@ -571,48 +590,52 @@ export default function RegisterPage() {
                         value={formData.email}
                         onChange={handleInputChange}
                         required
+                        disabled={verified}
                       />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Your verification code is sent here first.
+                      </p>
                     </div>
                     <div>
                       <Label htmlFor="phone">Phone Number *</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="phone"
-                          name="phone"
-                          value={formData.phone}
-                          onChange={handleInputChange}
-                          required
-                          placeholder="712 345 678 (e.g., 0712 345 678)"
-                          disabled={verified} // Disable if already verified
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={handleSendOTP}
-                          disabled={!formData.phone || otpSent || verified || actionLoading}
-                        >
-                          {actionLoading ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Sending...
-                            </>
-                          ) : verified ? (
-                            <>Verified ✓</>
-                          ) : otpSent ? (
-                            <>Sent ✓</>
-                          ) : (
-                            'Send OTP'
-                          )}
-                        </Button>
-                      </div>
+                      <Input
+                        id="phone"
+                        name="phone"
+                        value={formData.phone}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="712 345 678 (e.g., 0712 345 678)"
+                        disabled={verified}
+                      />
                       <p className="text-xs text-gray-500 mt-1">
-                        Enter your Kenyan phone number (e.g., 0712 345 678 or +254 712 345 678)
+                        Used as backup if email delivery fails (e.g., 0712 345 678 or +254 712 345 678)
                       </p>
                     </div>
                   </div>
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSendOTP}
+                      disabled={!formData.email || !formData.phone || otpSent || verified || actionLoading}
+                    >
+                      {actionLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Sending...
+                        </>
+                      ) : verified ? (
+                        <>Verified ✓</>
+                      ) : otpSent ? (
+                        <>Code sent ✓</>
+                      ) : (
+                        'Send verification code'
+                      )}
+                    </Button>
+                  </div>
                   {otpSent && !verified && (
                     <div>
-                      <Label htmlFor="otp">Enter OTP *</Label>
+                      <Label htmlFor="otp">Enter verification code *</Label>
                       <div className="flex gap-2">
                         <Input
                           id="otp"
@@ -641,7 +664,7 @@ export default function RegisterPage() {
                       {/* Resend OTP Section */}
                       <div className="mt-3 flex items-center justify-between">
                         <p className="text-xs text-gray-500">
-                          Didn't receive the code?
+                          Didn&apos;t receive the code? Check spam, then resend.
                         </p>
                         {otpResendDisabled ? (
                           <Button

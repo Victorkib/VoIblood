@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import OTPVerification from '@/lib/models/OTPVerification'
+import { normalizeOtpContacts } from '@/lib/otp-delivery'
 import VerificationToken from '@/lib/models/VerificationToken'
 import { checkRateLimit } from '@/lib/rate-limit'
 
@@ -38,11 +39,11 @@ export async function POST(request) {
       )
     }
 
-    // Normalize inputs
-    const normalizedPhone = phone ? phone.replace(/[\s\-\(\)]/g, '') : null
-    const normalizedEmail = email ? email.toLowerCase().trim() : null
-    const rateLimitKey = `verify:${normalizedPhone || normalizedEmail}`
-    const otpKey = normalizedPhone || normalizedEmail
+    const { normalizedPhone, normalizedEmail, lookupKey: otpKey } = normalizeOtpContacts({
+      phone,
+      email,
+    })
+    const rateLimitKey = `verify:${otpKey}`
 
     // Check rate limit for verification attempts (5 per 10 minutes)
     const rateLimit = checkRateLimit(rateLimitKey, 5, 10 * 60 * 1000)

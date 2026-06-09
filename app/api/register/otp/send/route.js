@@ -1,7 +1,7 @@
 /**
  * POST /api/register/otp/send
- * Send OTP via SMS (primary) or Email (backup)
- * 
+ * Send OTP via Email (primary) or SMS (backup)
+ *
  * Features:
  * - Database-backed OTP storage (persistent across server instances)
  * - Rate limiting (3 requests per 5 minutes per phone/email)
@@ -15,22 +15,32 @@ import { sendOTPViaSMS } from '@/lib/sms-service'
 import { sendOTPViaEmail } from '@/lib/email-service'
 import OTPVerification from '@/lib/models/OTPVerification'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { normalizeOtpContacts } from '@/lib/otp-delivery'
+
+function rateLimitHeaders(rateLimit, remainingDelta = 1) {
+  return {
+    'X-RateLimit-Limit': '3',
+    'X-RateLimit-Remaining': Math.max(0, rateLimit.remaining - remainingDelta).toString(),
+    'X-RateLimit-Reset': rateLimit.resetAt.toString(),
+  }
+}
 
 export async function POST(request) {
   const startTime = Date.now()
-  
+
   try {
     const body = await request.json()
     const { phone, email } = body
 
-    console.log('[OTP Send] Request received:', { 
-      phone: phone ? '***' : null, 
+    console.log('[OTP Send] Request received:', {
+      phone: phone ? '***' : null,
       email: email ? '***' : null,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     })
 
-    // Validate input - need either phone or email
-    if (!phone && !email) {
+    const { normalizedPhone, normalizedEmail, lookupKey } = normalizeOtpContacts({ phone, email })
+
+    if (!lookupKey) {
       console.log('[OTP Send] Validation failed: No phone or email provided')
       return NextResponse.json(
         { error: 'Phone number or email is required' },
@@ -38,48 +48,38 @@ export async function POST(request) {
       )
     }
 
-    // Normalize phone number (remove spaces, dashes, etc.)
-    const normalizedPhone = phone ? phone.replace(/[\s\-\(\)]/g, '') : null
-    const normalizedEmail = email ? email.toLowerCase().trim() : null
-    const rateLimitKey = normalizedPhone || normalizedEmail
+    const rateLimit = checkRateLimit(lookupKey, 3, 5 * 60 * 1000)
 
-    // Check rate limit (3 requests per 5 minutes)
-    const rateLimit = checkRateLimit(rateLimitKey, 3, 5 * 60 * 1000)
-    
     if (!rateLimit.allowed) {
-      console.log('[OTP Send] Rate limit exceeded for:', rateLimitKey)
+      console.log('[OTP Send] Rate limit exceeded for:', lookupKey)
       return NextResponse.json(
-        { 
+        {
           error: 'Too many requests. Please wait before requesting another OTP.',
           retryAfter: rateLimit.retryAfter,
         },
-        { 
+        {
           status: 429,
           headers: {
-            'X-RateLimit-Limit': '3',
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': rateLimit.resetAt.toString(),
+            ...rateLimitHeaders(rateLimit, 0),
             'Retry-After': rateLimit.retryAfter.toString(),
-          }
+          },
         }
       )
     }
 
-    // Connect to database
     await connectDB()
 
-    // Check if there's an existing unexpired OTP for this user
-    const existingOTP = await OTPVerification.getOTP(rateLimitKey)
-    
+    const existingOTP = await OTPVerification.getOTP(lookupKey)
+
     if (existingOTP) {
       const timeSinceCreated = Date.now() - existingOTP.createdAt.getTime()
-      const cooldownPeriod = 30000 // 30 seconds cooldown
-      
+      const cooldownPeriod = 30000
+
       if (timeSinceCreated < cooldownPeriod) {
         const waitTime = Math.ceil((cooldownPeriod - timeSinceCreated) / 1000)
         console.log('[OTP Send] Cooldown active, wait:', waitTime, 'seconds')
         return NextResponse.json(
-          { 
+          {
             error: `Please wait ${waitTime} seconds before requesting another OTP`,
             cooldown: true,
             waitTime,
@@ -87,92 +87,100 @@ export async function POST(request) {
           { status: 400 }
         )
       }
-      
-      // Delete old OTP to make room for new one
-      await OTPVerification.deleteOTP(rateLimitKey)
+
+      await OTPVerification.deleteOTP(lookupKey)
       console.log('[OTP Send] Deleted previous OTP')
     }
 
-    // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
+    const expiresAt = Date.now() + 5 * 60 * 1000
 
-    // Store OTP with 5-minute expiry
-    const expiresAt = Date.now() + 5 * 60 * 1000 // 5 minutes
-
-    console.log('[OTP Send] Storing OTP in database with key:', rateLimitKey)
+    console.log('[OTP Send] Storing OTP in database with key:', lookupKey)
     console.log('[OTP Send] Expires at:', new Date(expiresAt).toISOString())
 
-    await OTPVerification.createOTP(rateLimitKey, otp, normalizedPhone, normalizedEmail, expiresAt)
+    await OTPVerification.createOTP(
+      lookupKey,
+      otp,
+      normalizedPhone,
+      normalizedEmail,
+      expiresAt
+    )
 
     console.log('[OTP Send] OTP stored successfully')
 
-    // Try SMS first (primary - Twilio → Africa's Talking fallback)
+    let emailAttempted = false
+    let emailFailureReason = null
+
+    // Email first (primary)
+    if (normalizedEmail) {
+      emailAttempted = true
+      try {
+        console.log('[OTP Send] Attempting email delivery (primary)...')
+        const emailResult = await sendOTPViaEmail(normalizedEmail, otp)
+
+        if (emailResult.success) {
+          const duration = Date.now() - startTime
+          console.log('[OTP Send] Email sent successfully in', duration, 'ms')
+
+          return NextResponse.json(
+            {
+              success: true,
+              message: 'OTP sent to your email',
+              method: 'email',
+              provider: emailResult.provider,
+              fallbackUsed: false,
+              expiresAt,
+              remaining: rateLimit.remaining,
+            },
+            { headers: rateLimitHeaders(rateLimit) }
+          )
+        }
+
+        emailFailureReason = emailResult.error
+        console.log('[OTP Send] Email delivery failed, falling back to SMS:', emailResult.error)
+      } catch (emailError) {
+        emailFailureReason = emailError.message
+        console.log('[OTP Send] Email error:', emailError.message)
+      }
+    } else {
+      console.log('[OTP Send] No email provided, skipping email delivery')
+    }
+
+    // SMS backup (Twilio → Africa's Talking)
     if (normalizedPhone) {
       try {
-        console.log('[OTP Send] Attempting SMS delivery (Twilio → Africa\'s Talking)...')
+        console.log('[OTP Send] Attempting SMS delivery (backup)...')
         const smsResult = await sendOTPViaSMS(normalizedPhone, otp)
 
         if (smsResult.success) {
           const duration = Date.now() - startTime
           console.log('[OTP Send] SMS sent successfully via', smsResult.provider, 'in', duration, 'ms')
 
-          return NextResponse.json({
-            success: true,
-            message: 'OTP sent via SMS',
-            method: 'sms',
-            provider: smsResult.provider, // 'twilio' or 'africastalking'
-            expiresAt,
-            remaining: rateLimit.remaining,
-          }, {
-            headers: {
-              'X-RateLimit-Limit': '3',
-              'X-RateLimit-Remaining': (rateLimit.remaining - 1).toString(),
-              'X-RateLimit-Reset': rateLimit.resetAt.toString(),
-            }
-          })
+          return NextResponse.json(
+            {
+              success: true,
+              message: emailAttempted
+                ? 'Email delivery failed — OTP sent via SMS instead'
+                : 'OTP sent via SMS',
+              method: 'sms',
+              provider: smsResult.provider,
+              fallbackUsed: emailAttempted,
+              emailFailureReason: emailAttempted ? emailFailureReason : undefined,
+              expiresAt,
+              remaining: rateLimit.remaining,
+            },
+            { headers: rateLimitHeaders(rateLimit) }
+          )
         }
 
-        console.log('[OTP Send] SMS delivery failed, falling back to email:', smsResult.error)
+        console.log('[OTP Send] SMS delivery failed:', smsResult.error)
       } catch (smsError) {
         console.log('[OTP Send] SMS error:', smsError.message)
       }
-    } else {
-      console.log('[OTP Send] No phone number provided, skipping SMS')
+    } else if (emailAttempted) {
+      console.log('[OTP Send] No phone number provided for SMS backup')
     }
 
-    // Fallback to email
-    if (normalizedEmail) {
-      try {
-        console.log('[OTP Send] Attempting Email delivery...')
-        const emailResult = await sendOTPViaEmail(normalizedEmail, otp)
-
-        if (emailResult.success) {
-          const duration = Date.now() - startTime
-          console.log('[OTP Send] Email sent successfully in', duration, 'ms')
-          
-          return NextResponse.json({
-            success: true,
-            message: 'OTP sent via email',
-            method: 'email',
-            provider: emailResult.provider,
-            expiresAt,
-            remaining: rateLimit.remaining,
-          }, {
-            headers: {
-              'X-RateLimit-Limit': '3',
-              'X-RateLimit-Remaining': (rateLimit.remaining - 1).toString(),
-              'X-RateLimit-Reset': rateLimit.resetAt.toString(),
-            }
-          })
-        }
-
-        console.log('[OTP Send] Email delivery failed:', emailResult.error)
-      } catch (emailError) {
-        console.log('[OTP Send] Email error:', emailError.message)
-      }
-    }
-
-    // If both fail, log OTP to console for demo/testing
     console.log('\n[OTP FALLBACK] ========================================')
     console.log(`[OTP FALLBACK] Phone: ${normalizedPhone || 'N/A'}`)
     console.log(`[OTP FALLBACK] Email: ${normalizedEmail || 'N/A'}`)
@@ -183,27 +191,25 @@ export async function POST(request) {
     const duration = Date.now() - startTime
     console.log('[OTP Send] Fallback mode - OTP logged to console in', duration, 'ms')
 
-    return NextResponse.json({
-      success: true,
-      message: 'OTP generated (check console for demo)',
-      method: 'console',
-      expiresAt,
-      remaining: rateLimit.remaining,
-      demo: true,
-    }, {
-      headers: {
-        'X-RateLimit-Limit': '3',
-        'X-RateLimit-Remaining': (rateLimit.remaining - 1).toString(),
-        'X-RateLimit-Reset': rateLimit.resetAt.toString(),
-      }
-    })
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'OTP generated (check console for demo)',
+        method: 'console',
+        fallbackUsed: emailAttempted,
+        expiresAt,
+        remaining: rateLimit.remaining,
+        demo: true,
+      },
+      { headers: rateLimitHeaders(rateLimit) }
+    )
   } catch (error) {
     const duration = Date.now() - startTime
     console.error('[OTP Send] Unexpected error after', duration, 'ms:', error)
     console.error('[OTP Send] Error stack:', error.stack)
-    
+
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to send OTP. Please try again.',
         details: process.env.NODE_ENV === 'development' ? error.message : undefined,
       },
