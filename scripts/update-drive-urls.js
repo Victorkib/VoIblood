@@ -45,7 +45,8 @@ async function updateDriveUrls() {
       return
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const { getAppUrl, buildRegistrationUrl } = await import('../lib/app-url.js')
+    const appUrl = getAppUrl()
     const crypto = require('crypto')
 
     let updated = 0
@@ -60,7 +61,7 @@ async function updateDriveUrls() {
         }
 
         // Generate registration URL
-        drive.registrationUrl = `${appUrl}/register/${drive.registrationToken}`
+        drive.registrationUrl = buildRegistrationUrl(drive.registrationToken)
 
         // Set status and isActive if not set
         if (!drive.status) {

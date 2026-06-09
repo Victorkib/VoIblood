@@ -10,6 +10,7 @@ import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
 import Organization from '@/lib/models/Organization'
 import { assertDriveOrgAccess } from '@/lib/api/org-capability-guard'
+import { buildRegistrationUrl, resolveRegistrationUrl } from '@/lib/app-url'
 
 /**
  * GET /api/admin/drives
@@ -94,7 +95,7 @@ export async function GET(request) {
         targetDonors: drive.targetDonors,
         whatsappGroupLink: drive.whatsappGroupLink,
         registrationToken: drive.registrationToken,
-        registrationUrl: drive.registrationUrl,
+        registrationUrl: resolveRegistrationUrl(drive, request),
         isActive: drive.isActive,
         status: drive.status,
         stats: drive.stats,
@@ -178,7 +179,7 @@ export async function POST(request) {
 
     // Generate registration token
     const registrationToken = await DonationDrive.generateRegistrationToken()
-    const registrationUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/register/${registrationToken}`
+    const registrationUrl = buildRegistrationUrl(registrationToken, request)
 
     // Determine organization ID
     let organizationId = user.organizationId
@@ -231,7 +232,7 @@ export async function POST(request) {
         targetDonors: drive.targetDonors,
         whatsappGroupLink: drive.whatsappGroupLink,
         registrationToken: drive.registrationToken,
-        registrationUrl: drive.registrationUrl,
+        registrationUrl: resolveRegistrationUrl(drive, request),
         isActive: drive.isActive,
         status: drive.status,
         stats: {

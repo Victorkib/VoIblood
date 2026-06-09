@@ -54,7 +54,8 @@ export async function GET(request, { params }) {
       .limit(30)
       .lean()
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const { getAppUrl, resolveRegistrationUrl } = await import('@/lib/app-url')
+    const appUrl = getAppUrl(request)
     let createToken
     let buildUrl
     let getOrCreateShort
@@ -105,7 +106,7 @@ export async function GET(request, { params }) {
         driveStatus: d.status,
         participantStatus: row.status,
         source: row.source,
-        registrationUrl: d.registrationUrl || '',
+        registrationUrl: resolveRegistrationUrl(d, request),
         whatsappGroupLink: d.whatsappGroupLink || '',
         rsvpUrl,
         rsvpShortUrl,

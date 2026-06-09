@@ -11,6 +11,7 @@ import { verifyDriveRsvpToken } from '@/lib/rsvp-jwt'
 import { resolveRsvpSmsCode } from '@/lib/rsvp-sms-link'
 import { getDonationEligibilitySummary } from '@/lib/drive-outreach'
 import { syncDonorWithParticipant, upsertParticipant } from '@/lib/drive-participant-helpers'
+import { resolveRegistrationUrl } from '@/lib/app-url'
 
 async function resolveDonorAndDriveIds(token, code) {
   if (code) {
@@ -92,7 +93,7 @@ export async function GET(request) {
           address: drive.address,
           city: drive.city,
           whatsappGroupLink: drive.whatsappGroupLink || '',
-          registrationUrl: drive.registrationUrl || '',
+          registrationUrl: resolveRegistrationUrl(drive, request),
           organizationName: drive.organizationId?.name || '',
         },
         donor: {

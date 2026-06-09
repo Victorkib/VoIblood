@@ -9,6 +9,7 @@ import { connectDB } from '@/lib/db'
 import DonationDrive from '@/lib/models/DonationDrive'
 import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
+import { buildRegistrationUrl, resolveRegistrationUrl } from '@/lib/app-url'
 
 /**
  * GET /api/admin/drives/[id]
@@ -94,7 +95,7 @@ export async function GET(request, { params }) {
         targetDonors: drive.targetDonors,
         whatsappGroupLink: drive.whatsappGroupLink,
         registrationToken: drive.registrationToken,
-        registrationUrl: drive.registrationUrl,
+        registrationUrl: resolveRegistrationUrl(drive, request),
         isActive: drive.isActive,
         status: drive.status,
         stats: drive.stats,
@@ -156,8 +157,7 @@ export async function PUT(request, { params }) {
         }
         
         // Generate registration URL
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-        drive.registrationUrl = `${appUrl}/register/${drive.registrationToken}`
+        drive.registrationUrl = buildRegistrationUrl(drive.registrationToken, request)
         
         // Set status to active
         drive.status = 'active'
@@ -202,7 +202,7 @@ export async function PUT(request, { params }) {
           status: drive.status,
           isActive: drive.isActive,
           registrationToken: drive.registrationToken,
-          registrationUrl: drive.registrationUrl,
+          registrationUrl: resolveRegistrationUrl(drive, request),
           stats: drive.stats,
           outreachScheduled:
             body.action === 'activate' && process.env.DRIVE_OUTREACH_ON_ACTIVATE !== 'false',
