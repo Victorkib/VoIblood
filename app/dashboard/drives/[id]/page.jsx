@@ -67,9 +67,12 @@ import {
   Info,
 } from 'lucide-react'
 import { OrgRouteGuard } from '@/components/dashboard/org-route-guard'
+import { CONFIRMED_BLOOD_TYPES, formatBloodTypeLabel } from '@/lib/donor-blood-types'
 
 // Blood type color coding
+
 const bloodTypeStyles = {
+  unknown: { bg: 'bg-gradient-to-br from-slate-300 to-slate-500', text: 'text-white', border: 'border-slate-600' },
   'O+': { bg: 'bg-gradient-to-br from-red-400 to-red-600', text: 'text-white', border: 'border-red-700' },
   'O-': { bg: 'bg-gradient-to-br from-red-600 to-red-800', text: 'text-white', border: 'border-red-900' },
   'A+': { bg: 'bg-gradient-to-br from-blue-400 to-blue-600', text: 'text-white', border: 'border-blue-700' },
@@ -177,6 +180,7 @@ export default function DriveDetailsPage() {
       hepatitisC: 'pending',
       syphilis: 'pending',
     },
+    bloodType: '',
   })
   const [recordDonationLoading, setRecordDonationLoading] = useState(false)
 
@@ -286,6 +290,8 @@ export default function DriveDetailsPage() {
         hepatitisC: 'pending',
         syphilis: 'pending',
       },
+      bloodType:
+        donor.bloodType && donor.bloodType !== 'unknown' ? donor.bloodType : '',
     })
     setIsRecordDonationOpen(true)
   }
@@ -312,6 +318,13 @@ export default function DriveDetailsPage() {
       return
     }
 
+    const needsBloodType =
+      !selectedDonor.bloodType || selectedDonor.bloodType === 'unknown'
+    if (needsBloodType && !recordDonationForm.bloodType) {
+      setActionError('Please confirm the donor blood type before recording the donation')
+      return
+    }
+
     setRecordDonationLoading(true)
     setActionError(null)
     try {
@@ -331,6 +344,7 @@ export default function DriveDetailsPage() {
           recommendations: recordDonationForm.recommendations,
           screeningResults: recordDonationForm.screeningResults,
           sendNotification: true,
+          ...(recordDonationForm.bloodType ? { bloodType: recordDonationForm.bloodType } : {}),
         }),
       })
 
@@ -365,6 +379,7 @@ export default function DriveDetailsPage() {
             hepatitisC: 'pending',
             syphilis: 'pending',
           },
+          bloodType: '',
         })
         fetchDriveDetails()
         setTimeout(() => setActionSuccess(null), 5000)
@@ -501,11 +516,11 @@ export default function DriveDetailsPage() {
   }
 
   const getBloodTypeBadge = (bloodType) => {
-    const style = bloodTypeStyles[bloodType] || bloodTypeStyles['O+']
+    const style = bloodTypeStyles[bloodType] || bloodTypeStyles.unknown
     return (
       <Badge className={`${style.bg} ${style.text} ${style.border} border font-bold px-3 py-1`}>
         <Droplet className="w-3 h-3 mr-1" />
-        {bloodType}
+        {formatBloodTypeLabel(bloodType)}
       </Badge>
     )
   }
@@ -1449,6 +1464,36 @@ export default function DriveDetailsPage() {
                   Collection
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2">
+                  {selectedDonor &&
+                    (!selectedDonor.bloodType || selectedDonor.bloodType === 'unknown') && (
+                      <div className="space-y-2 sm:col-span-2">
+                        <label htmlFor="record-blood-type" className="text-sm font-medium">
+                          Confirm blood type <span className="text-red-600">*</span>
+                        </label>
+                        <select
+                          id="record-blood-type"
+                          value={recordDonationForm.bloodType}
+                          onChange={(e) =>
+                            setRecordDonationForm({
+                              ...recordDonationForm,
+                              bloodType: e.target.value,
+                            })
+                          }
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          disabled={recordDonationLoading}
+                        >
+                          <option value="">Select confirmed blood type…</option>
+                          {CONFIRMED_BLOOD_TYPES.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          Donor registered without a known blood type — confirm during screening.
+                        </p>
+                      </div>
+                    )}
                   <div className="space-y-2 sm:col-span-2">
                     <label htmlFor="record-component" className="text-sm font-medium">
                       Blood component <span className="text-red-600">*</span>

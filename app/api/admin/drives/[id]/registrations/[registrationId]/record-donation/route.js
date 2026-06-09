@@ -16,6 +16,10 @@ import {
   resolveParticipantForAdmin,
 } from '@/lib/drive-participant-helpers'
 import { awardGratitudePointsForDonation } from '@/lib/gratitude-points/award-service'
+import {
+  isConfirmedBloodType,
+  normalizeDonorBloodType,
+} from '@/lib/donor-blood-types'
 
 export async function POST(request, { params }) {
   try {
@@ -40,6 +44,7 @@ export async function POST(request, { params }) {
       eligibilityStatus = 'pending',
       screeningResults = {},
       sendNotification = true,
+      bloodType: bloodTypeInput,
     } = body
 
     const drive = await DonationDrive.findById(driveId)
@@ -66,6 +71,28 @@ export async function POST(request, { params }) {
     const donor = await Donor.findById(participant.donorId._id || participant.donorId)
     if (!donor) {
       return NextResponse.json({ error: 'Donor not found' }, { status: 404 })
+    }
+
+    let resolvedBloodType = donor.bloodType
+    if (bloodTypeInput) {
+      const normalizedInput = normalizeDonorBloodType(bloodTypeInput, donor.bloodType)
+      if (!isConfirmedBloodType(normalizedInput)) {
+        return NextResponse.json(
+          { error: 'A confirmed blood type is required before recording the donation' },
+          { status: 400 }
+        )
+      }
+      resolvedBloodType = normalizedInput
+    }
+
+    if (!isConfirmedBloodType(resolvedBloodType)) {
+      return NextResponse.json(
+        {
+          error:
+            'Donor blood type is still unknown. Confirm blood type during screening before recording this donation.',
+        },
+        { status: 400 }
+      )
     }
 
     const unitId = `UNIT-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
@@ -104,7 +131,7 @@ export async function POST(request, { params }) {
     const bloodUnit = await BloodInventory.create({
       organizationId: drive.organizationId,
       unitId,
-      bloodType: donor.bloodType,
+      bloodType: resolvedBloodType,
       component,
       volume,
       donorId: donor._id,
@@ -138,7 +165,7 @@ export async function POST(request, { params }) {
       driveId: drive._id,
       driveName: drive.name,
       volume,
-      bloodType: donor.bloodType,
+      bloodType: resolvedBloodType,
       unitId: bloodUnit.unitId,
       eligibilityStatus: normalizedEligibilityStatus,
       bloodWorkSummary,
@@ -152,6 +179,7 @@ export async function POST(request, { params }) {
       {
         $set: {
           status: 'completed',
+          bloodType: resolvedBloodType,
           lastDonationDate: today,
           nextEligibleDate: nextEligible,
           totalDonations: newTotal,
@@ -201,7 +229,7 @@ export async function POST(request, { params }) {
         participantId: participant._id.toString(),
         donorName: `${donor.firstName} ${donor.lastName}`,
         unitId: bloodUnit.unitId,
-        bloodType: donor.bloodType,
+        bloodType: resolvedBloodType,
         volume,
         totalDonations: newTotal,
         nextEligibleDate: nextEligible,

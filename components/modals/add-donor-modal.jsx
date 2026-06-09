@@ -14,6 +14,7 @@ import {
 import { UserPlus, X, Info } from 'lucide-react'
 import { useFormValidation } from '@/lib/use-form-validation'
 import { FormField } from '@/components/ui/form-error'
+import { DONOR_BLOOD_TYPES } from '@/lib/donor-blood-types'
 
 const selectClass =
   'flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -24,7 +25,7 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
     lastName: '',
     email: '',
     phone: '',
-    bloodType: 'O+',
+    bloodType: 'unknown',
     gender: 'male',
     dateOfBirth: '',
     weight: '',
@@ -35,7 +36,7 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
   const [fieldErrors, setFieldErrors] = useState({})
   const { validate } = useFormValidation('donor')
 
-  const bloodTypes = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']
+  const bloodTypes = DONOR_BLOOD_TYPES
 
   useEffect(() => {
     if (isOpen) {
@@ -95,7 +96,7 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
         lastName: '',
         email: '',
         phone: '',
-        bloodType: 'O+',
+        bloodType: 'unknown',
         gender: 'male',
         dateOfBirth: '',
         weight: '',
@@ -233,7 +234,7 @@ export function AddDonorModal({ isOpen, onClose, onSuccess, organizationId }) {
                     >
                       {bloodTypes.map((type) => (
                         <option key={type} value={type}>
-                          {type}
+                          {type === 'unknown' ? "Unknown (confirm at screening)" : type}
                         </option>
                       ))}
                     </select>

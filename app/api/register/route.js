@@ -14,6 +14,15 @@ import { connectDB } from '@/lib/db'
 import DonationDrive from '@/lib/models/DonationDrive'
 import Donor from '@/lib/models/Donor'
 import VerificationToken from '@/lib/models/VerificationToken'
+import { normalizeDonorBloodType, isConfirmedBloodType } from '@/lib/donor-blood-types'
+import { getAppUrl } from '@/lib/app-url'
+
+const ACTIVE_DRIVE_PARTICIPANT_STATUSES = new Set([
+  'registered',
+  'confirmed',
+  'checked_in',
+  'completed',
+])
 
 /**
  * GET /api/register/drive?token=xxx
@@ -226,10 +235,16 @@ export async function POST(request) {
       organizationId: drive.organizationId,
     })
 
+    const resolvedBloodType = normalizeDonorBloodType(bloodType)
+
     if (existingDonor) {
-      console.log('[Register API] Duplicate donor found:', existingDonor._id)
+      console.log('[Register API] Returning donor found:', existingDonor._id)
 
       const DriveParticipant = (await import('@/lib/models/DriveParticipant')).default
+      const { upsertParticipant, syncDonorWithParticipant } = await import(
+        '@/lib/drive-participant-helpers'
+      )
+
       const participant = await DriveParticipant.findOne({
         donorId: existingDonor._id,
         driveId: drive._id,
@@ -237,58 +252,128 @@ export async function POST(request) {
         .select('status source')
         .lean()
 
-      const { createDriveRsvpToken, buildRsvpUrl } = await import('@/lib/rsvp-jwt')
-      const { getOrCreateRsvpSmsLink } = await import('@/lib/rsvp-sms-link')
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      let rsvpUrl = null
-      let rsvpShortUrl = null
-      try {
-        const rsvpToken = await createDriveRsvpToken(String(existingDonor._id), String(drive._id))
-        rsvpUrl = buildRsvpUrl(rsvpToken, appUrl)
-        const short = await getOrCreateRsvpSmsLink(String(existingDonor._id), String(drive._id))
-        rsvpShortUrl = short.url
-      } catch (e) {
-        console.warn('[Register API] Could not build RSVP URL:', e.message)
-      }
+      const appUrl = getAppUrl(request)
 
-      const profileUrl = existingDonor.donorToken
-        ? `${appUrl}/donor/${existingDonor.donorToken}`
-        : null
+      if (participant && ACTIVE_DRIVE_PARTICIPANT_STATUSES.has(participant.status)) {
+        const { createDriveRsvpToken, buildRsvpUrl } = await import('@/lib/rsvp-jwt')
+        const { getOrCreateRsvpSmsLink } = await import('@/lib/rsvp-sms-link')
+        let rsvpUrl = null
+        let rsvpShortUrl = null
+        try {
+          const rsvpToken = await createDriveRsvpToken(String(existingDonor._id), String(drive._id))
+          rsvpUrl = buildRsvpUrl(rsvpToken, appUrl)
+          const short = await getOrCreateRsvpSmsLink(String(existingDonor._id), String(drive._id))
+          rsvpShortUrl = short.url
+        } catch (e) {
+          console.warn('[Register API] Could not build RSVP URL:', e.message)
+        }
 
-      let message =
-        "You're already a donor with this organization. You don't need a new registration — confirm this drive with your personal RSVP link, or open your donor profile."
+        const profileUrl = existingDonor.donorToken
+          ? `${appUrl}/donor/${existingDonor.donorToken}`
+          : null
 
-      if (participant) {
-        if (participant.status === 'declined') {
-          message =
-            "We found your profile. You previously indicated you couldn't attend this drive — you can update your response using the RSVP link below."
-        } else if (['registered', 'confirmed', 'checked_in'].includes(participant.status)) {
-          message =
-            "You're already on the roster for this drive. Use your donor profile or the RSVP page to review details — no second registration is needed."
-        } else if (participant.status === 'completed') {
+        let message =
+          "You're already on the roster for this drive. Use your donor profile or RSVP page to review details."
+
+        if (participant.status === 'completed') {
           message =
             'Our records show you already completed this drive. Open your donor profile for your history and next eligible date.'
         }
+
+        return NextResponse.json(
+          {
+            error: 'Already registered for this drive',
+            duplicate: true,
+            sameDrive: true,
+            message,
+            participantStatus: participant.status,
+            rsvpUrl,
+            rsvpShortUrl,
+            profileUrl,
+            donorId: existingDonor._id.toString(),
+            donorToken: existingDonor.donorToken || null,
+          },
+          { status: 409 }
+        )
       }
 
-      return NextResponse.json(
-        {
-          error: 'Already a donor',
-          duplicate: true,
-          sameDrive: true,
-          message,
-          participantStatus: participant?.status || null,
-          rsvpUrl,
-          rsvpShortUrl,
+      const donorUpdates = {
+        driveId: drive._id,
+        driveToken,
+        hasDonatedBefore: Boolean(hasDonatedBefore) || existingDonor.hasDonatedBefore,
+        isVerified: true,
+        status: 'registered',
+      }
+
+      if (lastDonationDate) {
+        donorUpdates.lastDonationDate = new Date(lastDonationDate)
+      }
+      if (medicalConditions) donorUpdates.medicalConditions = medicalConditions
+      if (medications) donorUpdates.medications = medications
+      if (
+        isConfirmedBloodType(resolvedBloodType) ||
+        existingDonor.bloodType === 'unknown'
+      ) {
+        donorUpdates.bloodType = resolvedBloodType
+      }
+
+      await Donor.updateOne({ _id: existingDonor._id }, { $set: donorUpdates })
+
+      const participantDoc = await upsertParticipant(drive._id, existingDonor._id, {
+        source: 'public',
+        status: 'registered',
+      })
+
+      const refreshedDonor = await Donor.findById(existingDonor._id)
+      await syncDonorWithParticipant(refreshedDonor, participantDoc, drive)
+      await VerificationToken.useToken(verificationToken)
+
+      const profileUrl = refreshedDonor.donorToken
+        ? `${appUrl}/donor/${refreshedDonor.donorToken}`
+        : null
+
+      if (refreshedDonor.email && profileUrl) {
+        try {
+          const Organization = (await import('@/lib/models/Organization')).default
+          const org = await Organization.findById(drive.organizationId).select('name').lean()
+          const { sendDonorDriveRegistrationEmail } = await import('@/lib/org-onboarding/emails')
+          await sendDonorDriveRegistrationEmail({
+            to: refreshedDonor.email,
+            donorName: `${refreshedDonor.firstName} ${refreshedDonor.lastName}`,
+            driveName: drive.name,
+            profileUrl,
+            organizationName: org?.name || '',
+          })
+        } catch (emailErr) {
+          console.warn('[Register API] Returning donor welcome email failed:', emailErr.message)
+        }
+      }
+
+      const duration = Date.now() - startTime
+      console.log('[Register API] Returning donor enrolled for drive in', duration, 'ms')
+
+      return NextResponse.json({
+        success: true,
+        returningDonor: true,
+        message: `Welcome back! You're registered for ${drive.name}.`,
+        data: {
+          donorId: refreshedDonor._id.toString(),
+          donorToken: refreshedDonor.donorToken,
+          fullName: `${refreshedDonor.firstName} ${refreshedDonor.lastName}`,
+          bloodType: refreshedDonor.bloodType,
           profileUrl,
-          donorId: existingDonor._id.toString(),
-          donorToken: existingDonor.donorToken || null,
         },
-        { status: 409 }
-      )
+      }, { status: 200 })
     }
 
     // Calculate age
+    if (!dateOfBirth) {
+      return NextResponse.json(
+        { error: 'Date of birth is required' },
+        { status: 400 }
+      )
+    }
+
     const birthDate = new Date(dateOfBirth)
     const age = new Date().getFullYear() - birthDate.getFullYear()
 
@@ -310,7 +395,7 @@ export async function POST(request) {
       lastName,
       email: normalizedEmail,
       phone: normalizedPhone,
-      bloodType,
+      bloodType: resolvedBloodType,
       dateOfBirth: birthDate,
       gender,
       weight: weight ? parseFloat(weight) : null,
@@ -343,7 +428,7 @@ export async function POST(request) {
     await VerificationToken.useToken(verificationToken)
     console.log('[Register API] Verification token marked as used')
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const appUrl = getAppUrl(request)
     const profileUrl = donor.donorToken ? `${appUrl}/donor/${donor.donorToken}` : null
 
     if (donor.email && profileUrl) {
@@ -373,7 +458,7 @@ export async function POST(request) {
         donorId: donor._id.toString(),
         donorToken: donor.donorToken,
         fullName: `${firstName} ${lastName}`,
-        bloodType,
+        bloodType: resolvedBloodType,
         profileUrl,
       },
     }, { status: 201 })

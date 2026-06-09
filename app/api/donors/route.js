@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import Donor from '@/lib/models/Donor'
+import { normalizeDonorBloodType } from '@/lib/donor-blood-types'
 import Organization from '@/lib/models/Organization'
 import { getRateLimitInfo, createRateLimitError } from '@/lib/rate-limiter'
 import { sendDonorRegistrationEmail, sendDonorAdminQuickWelcomeEmail } from '@/lib/email-service'
@@ -285,7 +286,7 @@ export async function POST(request) {
       lastName,
       email: normEmail,
       phone,
-      bloodType,
+      bloodType: normalizeDonorBloodType(bloodType),
       dateOfBirth,
       gender,
       weight: body.weight,

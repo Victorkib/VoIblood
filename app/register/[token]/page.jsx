@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { formatBloodTypeLabel } from '@/lib/donor-blood-types'
 import {
   Calendar,
   MapPin,
@@ -36,7 +37,7 @@ export default function RegisterPage() {
     lastName: '',
     email: '',
     phone: '',
-    bloodType: 'O+',
+    bloodType: 'unknown',
     dateOfBirth: '',
     gender: 'male',
     weight: '',
@@ -362,8 +363,9 @@ export default function RegisterPage() {
           fullName,
           bloodType,
           profileUrl,
+          welcomeMessage: data.message || null,
         })
-        
+
         setRegistrationStep('success')
       } else if (res.status === 409 && data.duplicate) {
         setExistingDonorHelp({
@@ -721,6 +723,7 @@ export default function RegisterPage() {
                         onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
                       >
+                        <option value="unknown">I don&apos;t know yet</option>
                         <option value="O+">O+</option>
                         <option value="O-">O-</option>
                         <option value="A+">A+</option>
@@ -730,6 +733,9 @@ export default function RegisterPage() {
                         <option value="AB+">AB+</option>
                         <option value="AB-">AB-</option>
                       </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Choose &quot;I don&apos;t know yet&quot; if unsure — staff will confirm during screening.
+                      </p>
                     </div>
                     <div>
                       <Label htmlFor="dateOfBirth">Date of Birth *</Label>
@@ -779,16 +785,25 @@ export default function RegisterPage() {
                       id="hasDonatedBefore"
                       name="hasDonatedBefore"
                       value={formData.hasDonatedBefore ? 'yes' : 'no'}
-                      onChange={(e) => setFormData(prev => ({ ...prev, hasDonatedBefore: e.target.value === 'yes' }))}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          hasDonatedBefore: e.target.value === 'yes',
+                          lastDonationDate: e.target.value === 'yes' ? prev.lastDonationDate : '',
+                        }))
+                      }
                       className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
                     >
-                      <option value="no">No</option>
-                      <option value="yes">Yes</option>
+                      <option value="no">No — this would be my first time</option>
+                      <option value="yes">Yes — I have donated before (anywhere)</option>
                     </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      This helps us understand your experience. You can still register for this drive either way.
+                    </p>
                   </div>
                   {formData.hasDonatedBefore && (
                     <div>
-                      <Label htmlFor="lastDonationDate">Last Donation Date</Label>
+                      <Label htmlFor="lastDonationDate">Last Donation Date (optional)</Label>
                       <Input
                         id="lastDonationDate"
                         name="lastDonationDate"
@@ -851,7 +866,7 @@ export default function RegisterPage() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={actionLoading || !otpSent}
+                    disabled={actionLoading || !verified}
                     className="flex-1 bg-red-600 hover:bg-red-700"
                   >
                     {actionLoading ? (
@@ -953,7 +968,9 @@ export default function RegisterPage() {
                 <CheckCircle className="w-12 h-12 text-green-600" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Complete!</h2>
-              <p className="text-gray-600 mb-6">Thank you for registering to donate blood</p>
+              <p className="text-gray-600 mb-6">
+                {donorData?.welcomeMessage || 'Thank you for registering to donate blood'}
+              </p>
 
               {/* Donor Information Card */}
               {donorData && (
@@ -972,7 +989,7 @@ export default function RegisterPage() {
                       <div className="flex items-center gap-2">
                         <Droplet className="w-4 h-4 text-red-600" />
                         <span className="font-semibold text-red-700 bg-red-100 px-3 py-1 rounded-full text-sm">
-                          {donorData.bloodType || 'N/A'}
+                          {formatBloodTypeLabel(donorData.bloodType)}
                         </span>
                       </div>
                     </div>

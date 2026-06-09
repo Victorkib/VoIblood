@@ -12,6 +12,7 @@ import { getCurrentUser } from '@/lib/session'
 import { isSuperAdmin, isOrgAdmin } from '@/lib/rbac'
 import DonationDrive from '@/lib/models/DonationDrive'
 import Donor from '@/lib/models/Donor'
+import { normalizeDonorBloodType } from '@/lib/donor-blood-types'
 import { findDuplicateDonorForOrganization } from '@/lib/donor-dedupe'
 
 export async function POST(request, { params }) {
@@ -119,7 +120,7 @@ export async function POST(request, { params }) {
       lastName,
       email: normalizedEmail,
       phone: normalizedPhone,
-      bloodType,
+      bloodType: normalizeDonorBloodType(bloodType),
       dateOfBirth: birthDate,
       gender,
       weight: weight ? parseFloat(weight) : null,
