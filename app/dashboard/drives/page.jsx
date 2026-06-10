@@ -69,6 +69,8 @@ export default function DrivesPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState(null)
   const [actionSuccess, setActionSuccess] = useState(null)
+  const [outreachLoading, setOutreachLoading] = useState(false)
+  const [outreachMessage, setOutreachMessage] = useState(null)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -164,6 +166,29 @@ export default function DrivesPage() {
     setSelectedDrive(drive)
     setActionMode('deactivate')
     setIsActivateModalOpen(true)
+  }
+
+  const runDonorOutreach = async (driveId) => {
+    setOutreachLoading(true)
+    setOutreachMessage(null)
+    try {
+      const res = await fetch(`/api/admin/drives/${driveId}/outreach`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Outreach failed')
+      const stats = data.data?.stats
+      setOutreachMessage(
+        stats
+          ? `Outreach sent: ${stats.emailed} emails (${stats.eligibleEmailed} eligible, ${stats.supporterEmailed} supporter), ${stats.smsed} SMS.`
+          : 'Donor outreach completed.'
+      )
+    } catch (err) {
+      setOutreachMessage(err.message)
+    } finally {
+      setOutreachLoading(false)
+    }
   }
 
   const confirmAction = async () => {
@@ -553,16 +578,37 @@ export default function DrivesPage() {
           </DialogHeader>
           {driveForShare && (
             <div className="space-y-4">
-              {driveForShare.outreachScheduled && (
+              {(driveForShare.outreachScheduled || driveForShare.status === 'active') && (
                 <div className="flex gap-3 rounded-lg border border-rose-200 bg-gradient-to-r from-rose-50 to-red-50 px-4 py-3 text-sm text-rose-950">
                   <Heart className="w-5 h-5 shrink-0 text-rose-600 mt-0.5" aria-hidden />
-                  <div>
-                    <p className="font-semibold text-rose-900">Donor outreach is running</p>
-                    <p className="text-rose-900/90 mt-1 leading-relaxed">
-                      Eligible donors are receiving an invitation by email (and SMS when we have a mobile number).
-                      Donors who are not eligible yet get a supporter message with ways to help and their status on file.
-                      This happens in the background and may take a minute for large lists.
+                  <div className="flex-1 space-y-2">
+                    <p className="font-semibold text-rose-900">
+                      {driveForShare.outreachScheduled ? 'Donor outreach is running' : 'Donor outreach on activation'}
                     </p>
+                    <p className="text-rose-900/90 leading-relaxed">
+                      Eligible donors receive an invitation to confirm for this drive (email + SMS when we have a mobile number).
+                      Donors who are not eligible yet receive a supporter message with their status and links to share.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-rose-300 bg-white/80 hover:bg-white"
+                      disabled={outreachLoading || !driveForShare.id}
+                      onClick={() => runDonorOutreach(driveForShare.id)}
+                    >
+                      {outreachLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Sending…
+                        </>
+                      ) : (
+                        'Send / retry donor emails'
+                      )}
+                    </Button>
+                    {outreachMessage && (
+                      <p className="text-xs text-rose-800/90">{outreachMessage}</p>
+                    )}
                   </div>
                 </div>
               )}

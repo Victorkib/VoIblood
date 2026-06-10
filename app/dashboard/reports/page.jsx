@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Download, Calendar, Package, Users, TrendingUp, AlertCircle } from 'lucide-react'
+import { Download, Calendar, Package, Users, TrendingUp, AlertCircle, Heart, FileSpreadsheet } from 'lucide-react'
 import { useAuth } from '@/components/auth/auth-provider'
 import { OrgFeatureLayout } from '@/components/dashboard/org-route-guard'
 import { useOrganizationId } from '@/lib/dashboard/use-organization-id'
+import { downloadReport } from '@/lib/dashboard/download-report'
 
 export default function ReportsPage() {
   const [stats, setStats] = useState(null)
@@ -16,6 +17,7 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [format, setFormat] = useState('csv')
+  const [donorExportLayout, setDonorExportLayout] = useState('full')
   const [downloadLoading, setDownloadLoading] = useState(false)
   const [downloadError, setDownloadError] = useState(null)
   const { user } = useAuth()
@@ -61,6 +63,14 @@ export default function ReportsPage() {
       key: 'donors',
     },
     {
+      title: 'Donor Donation Registry',
+      description: 'All donors who have donated — profile data plus every donation (drive, unit ID, dates)',
+      icon: Heart,
+      color: 'text-rose-600',
+      key: 'donor_donations',
+      featured: true,
+    },
+    {
       title: 'Request Summary',
       description: 'Hospital requests and fulfillment rates',
       icon: TrendingUp,
@@ -102,37 +112,17 @@ export default function ReportsPage() {
       setDownloadLoading(true)
       setDownloadError(null)
 
-      const params = new URLSearchParams({
+      await downloadReport({
         organizationId,
         reportType: selectedType,
-        startDate: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        endDate: endDate || new Date().toISOString().split('T')[0],
         format,
+        startDate,
+        endDate,
+        layout: selectedType === 'donor_donations' ? donorExportLayout : undefined,
+        scope: selectedType === 'donor_donations' ? 'donated_only' : undefined,
+        filenamePrefix:
+          selectedType === 'donor_donations' ? 'donor-donation-registry' : `report-${selectedType}`,
       })
-
-      const response = await fetch(`/api/reports/export?${params}`)
-
-      if (!response.ok) {
-        let message = 'Failed to generate report'
-        try {
-          const errData = await response.json()
-          message = errData.message || message
-        } catch {
-          // response may not be JSON
-        }
-        throw new Error(message)
-      }
-
-      const blob = await response.blob()
-      const extension = format === 'pdf' ? 'pdf' : format === 'xlsx' ? 'xlsx' : 'csv'
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `report-${selectedType}-${new Date().toISOString().split('T')[0]}.${extension}`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
     } catch (err) {
       console.error('[v0] Generate report error:', err)
       setDownloadError(err.message)
@@ -206,6 +196,35 @@ export default function ReportsPage() {
         </div>
       )}
 
+      {/* Featured donor registry export */}
+      {showDonorMetrics && (
+        <Card className="p-6 border-rose-200/80 bg-gradient-to-br from-rose-50/80 to-background dark:from-rose-950/20">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+                <FileSpreadsheet className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Download full donor donation history</h3>
+                <p className="text-sm text-foreground/60 mt-1 max-w-2xl">
+                  Export every donor who has ever donated since launch — donor profiles, donation dates,
+                  blood units, drive names, screening notes, and inventory status. All-time by default;
+                  optional date range in the custom builder below.
+                </p>
+              </div>
+            </div>
+            <Button
+              className="gap-2 shrink-0 bg-rose-600 hover:bg-rose-700"
+              disabled={downloadLoading || !organizationId}
+              onClick={() => handleGenerateReport('donor_donations')}
+            >
+              <Download className="w-4 h-4" />
+              {downloadLoading ? 'Generating...' : 'Download registry (CSV)'}
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {/* Report Categories */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {reports.map((report, idx) => {
@@ -213,7 +232,9 @@ export default function ReportsPage() {
           return (
             <Card
               key={idx}
-              className="p-6 hover:border-primary/30 hover:shadow-lg transition cursor-pointer"
+              className={`p-6 hover:border-primary/30 hover:shadow-lg transition cursor-pointer ${
+                report.featured ? 'ring-1 ring-rose-200/60' : ''
+              }`}
               onClick={() => setReportType(report.key)}
             >
               <div className={`mb-4 p-3 rounded-lg bg-secondary/10 w-fit`}>
@@ -254,6 +275,7 @@ export default function ReportsPage() {
               >
                 <option value="inventory">Inventory</option>
                 <option value="donors">Donors</option>
+                <option value="donor_donations">Donor donation registry</option>
                 <option value="requests">Requests</option>
                 <option value="usage">Usage</option>
                 <option value="expiry">Expiry</option>
@@ -291,6 +313,28 @@ export default function ReportsPage() {
               </select>
             </div>
           </div>
+          {reportType === 'donor_donations' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Registry layout</label>
+                <select
+                  value={donorExportLayout}
+                  onChange={(e) => setDonorExportLayout(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md border border-border bg-background text-foreground"
+                >
+                  <option value="full">Full (donor summary + donation detail)</option>
+                  <option value="summary">Donor summary only (one row per donor)</option>
+                  <option value="detailed">Donation detail only (one row per donation)</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <p className="text-sm text-foreground/60 pb-2">
+                  Leave dates empty to export all donors who have ever donated. Set a range to filter
+                  individual donation rows.
+                </p>
+              </div>
+            </div>
+          )}
           <Button className="w-full gap-2" onClick={() => handleGenerateReport()} disabled={downloadLoading || !organizationId}>
             <Calendar className="w-4 h-4" />
             {downloadLoading ? 'Generating report...' : 'Download Custom Report'}

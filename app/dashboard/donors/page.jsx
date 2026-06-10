@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Download, Loader2 } from 'lucide-react'
+import { downloadReport } from '@/lib/dashboard/download-report'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/components/auth/auth-provider'
 import { AddDonorModal } from '@/components/modals/add-donor-modal'
@@ -21,6 +22,8 @@ export default function DonorsPage() {
   const [selectedDrive, setSelectedDrive] = useState('')
   const [page, setPage] = useState(1)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
+  const [exportError, setExportError] = useState(null)
   const { user, isLoading: authLoading } = useAuth()
   const organizationId = useOrganizationId()
 
@@ -110,6 +113,25 @@ export default function DonorsPage() {
     setIsModalOpen(false)
   }
 
+  const handleExportDonationRegistry = async () => {
+    try {
+      setExportLoading(true)
+      setExportError(null)
+      await downloadReport({
+        organizationId,
+        reportType: 'donor_donations',
+        format: 'csv',
+        layout: 'full',
+        scope: 'donated_only',
+        filenamePrefix: 'donor-donation-registry',
+      })
+    } catch (err) {
+      setExportError(err.message)
+    } finally {
+      setExportLoading(false)
+    }
+  }
+
   // Show loading while auth is initializing or data is loading
   if (authLoading || loading) {
     return (
@@ -169,10 +191,25 @@ export default function DonorsPage() {
     <OrgFeatureLayout
       feature="donors"
       actions={
-        <Button className="gap-2" onClick={() => setIsModalOpen(true)}>
-          <Plus className="w-4 h-4" />
-          Add donor
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            disabled={exportLoading || !organizationId}
+            onClick={handleExportDonationRegistry}
+          >
+            {exportLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Export donations
+          </Button>
+          <Button className="gap-2" onClick={() => setIsModalOpen(true)}>
+            <Plus className="w-4 h-4" />
+            Add donor
+          </Button>
+        </div>
       }
     >
       <AddDonorModal
@@ -181,6 +218,12 @@ export default function DonorsPage() {
         onSuccess={handleAddDonorSuccess}
         organizationId={organizationId}
       />
+
+      {exportError && (
+        <Card className="p-4 border-red-500/50 bg-red-500/5">
+          <p className="text-red-600 text-sm">Export failed: {exportError}</p>
+        </Card>
+      )}
 
       {/* Search and Filter */}
       <Card className="p-4">

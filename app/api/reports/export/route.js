@@ -4,6 +4,11 @@ import BloodInventory from '@/lib/models/BloodInventory'
 import Request from '@/lib/models/Request'
 import mongoose from 'mongoose'
 import { getCurrentUser, canAccessOrganization } from '@/lib/session'
+import {
+  buildDonorDonationExport,
+  generateDonorDonationExportCSV,
+  generateDonorDonationExportPDF,
+} from '@/lib/reports/donor-donation-export'
 
 function toObjectId(id) {
   if (!id) return null
@@ -79,31 +84,7 @@ function escapePdfText(text) {
   return String(text).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
 }
 
-function generatePDF(data) {
-  const lines = [
-    data.type || 'Report',
-    `Generated: ${new Date().toLocaleString()}`,
-    '',
-    ...Object.entries(data)
-      .filter(([key]) => !['units', 'donors', 'requests', 'expired', 'expiring'].includes(key))
-      .map(([key, value]) => {
-        if (typeof value === 'object' && value !== null) {
-          return `${key}: ${JSON.stringify(value)}`
-        }
-        return `${key}: ${value}`
-      }),
-  ]
-
-  const recordKeys = ['units', 'donors', 'requests', 'expired', 'expiring']
-  const recordKey = recordKeys.find((key) => Array.isArray(data[key]) && data[key].length > 0)
-  if (recordKey) {
-    lines.push('', `${recordKey} (first ${Math.min(data[recordKey].length, 25)} records):`)
-    data[recordKey].slice(0, 25).forEach((item, index) => {
-      const flat = flattenRecord(typeof item.toObject === 'function' ? item.toObject() : item)
-      lines.push(`${index + 1}. ${JSON.stringify(flat)}`)
-    })
-  }
-
+function buildPdfFromLines(lines) {
   const contentLines = lines.map((line, i) => {
     const y = 750 - i * 14
   if (y < 40) return null
@@ -138,6 +119,34 @@ ${420 + streamLength}
   return pdf
 }
 
+function generatePDF(data) {
+  const lines = [
+    data.type || 'Report',
+    `Generated: ${new Date().toLocaleString()}`,
+    '',
+    ...Object.entries(data)
+      .filter(([key]) => !['units', 'donors', 'requests', 'expired', 'expiring', 'donorSummaries', 'donations', 'stats'].includes(key))
+      .map(([key, value]) => {
+        if (typeof value === 'object' && value !== null) {
+          return `${key}: ${JSON.stringify(value)}`
+        }
+        return `${key}: ${value}`
+      }),
+  ]
+
+  const recordKeys = ['units', 'donors', 'requests', 'expired', 'expiring']
+  const recordKey = recordKeys.find((key) => Array.isArray(data[key]) && data[key].length > 0)
+  if (recordKey) {
+    lines.push('', `${recordKey} (first ${Math.min(data[recordKey].length, 25)} records):`)
+    data[recordKey].slice(0, 25).forEach((item, index) => {
+      const flat = flattenRecord(typeof item.toObject === 'function' ? item.toObject() : item)
+      lines.push(`${index + 1}. ${JSON.stringify(flat)}`)
+    })
+  }
+
+  return buildPdfFromLines(lines)
+}
+
 export async function GET(req) {
   try {
     await connectDB()
@@ -153,6 +162,8 @@ export async function GET(req) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const format = searchParams.get('format') || 'csv'
+    const layout = searchParams.get('layout') || 'full'
+    const scope = searchParams.get('scope') || 'donated_only'
 
     if (!organizationId) {
       return Response.json({ message: 'Organization ID is required' }, { status: 400 })
@@ -203,12 +214,26 @@ export async function GET(req) {
           type: 'Donor Analytics',
           totalDonors: donors.length,
           byStatus: {
-            available: donors.filter((d) => d.donationStatus === 'available').length,
-            deferred: donors.filter((d) => d.donationStatus === 'deferred').length,
-            ineligible: donors.filter((d) => d.donationStatus === 'ineligible').length,
+            completed: donors.filter((d) => d.status === 'completed').length,
+            registered: donors.filter((d) => d.status === 'registered').length,
+            confirmed: donors.filter((d) => d.status === 'confirmed').length,
+            checked_in: donors.filter((d) => d.status === 'checked_in').length,
+            cancelled: donors.filter((d) => d.status === 'cancelled').length,
+            no_show: donors.filter((d) => d.status === 'no_show').length,
           },
+          withDonations: donors.filter((d) => (d.totalDonations || 0) > 0).length,
           donors,
         }
+        break
+      }
+
+      case 'donor_donations': {
+        data = await buildDonorDonationExport(orgObjectId, {
+          startDate,
+          endDate,
+          scope,
+          includeInventoryOrphans: true,
+        })
         break
       }
 
@@ -304,7 +329,22 @@ export async function GET(req) {
         return Response.json({ message: 'Invalid report type' }, { status: 400 })
     }
 
-    const filenameBase = `report-${reportType}-${new Date().toISOString().split('T')[0]}`
+    const filenameBase =
+      reportType === 'donor_donations'
+        ? `donor-donation-registry-${new Date().toISOString().split('T')[0]}`
+        : `report-${reportType}-${new Date().toISOString().split('T')[0]}`
+
+    if (reportType === 'donor_donations' && (format === 'csv' || format === 'xlsx')) {
+      const csv = generateDonorDonationExportCSV(data, layout)
+      return new Response(csv, {
+        headers: {
+          'Content-Type': format === 'xlsx'
+            ? 'application/vnd.ms-excel'
+            : 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filenameBase}.${format === 'xlsx' ? 'xlsx' : 'csv'}"`,
+        },
+      })
+    }
 
     if (format === 'csv' || format === 'xlsx') {
       const csv = generateCSV(data)
@@ -319,7 +359,12 @@ export async function GET(req) {
     }
 
     if (format === 'pdf') {
-      return new Response(generatePDF(data), {
+      const pdfContent =
+        reportType === 'donor_donations'
+          ? buildPdfFromLines(generateDonorDonationExportPDF(data))
+          : generatePDF(data)
+
+      return new Response(pdfContent, {
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="${filenameBase}.pdf"`,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,6 +37,7 @@ import {
 export default function RegisterPage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const [drive, setDrive] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -196,6 +197,14 @@ export default function RegisterPage() {
       fetchDriveDetails(params.token)
     }
   }, [params.token])
+
+  useEffect(() => {
+    const mode = searchParams.get('mode')
+    if (mode === 'supporter') {
+      setRegistrationMode('supporter')
+      setRegistrationStep('form')
+    }
+  }, [searchParams])
 
   const fetchDriveDetails = async (token) => {
     try {

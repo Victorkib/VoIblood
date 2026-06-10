@@ -179,11 +179,8 @@ export async function PUT(request, { params }) {
 
       if (body.action === 'activate' && process.env.DRIVE_OUTREACH_ON_ACTIVATE !== 'false') {
         const { after } = await import('next/server')
-        const idStr = drive._id.toString()
-        after(async () => {
-          const { runDriveActivationOutreachJob } = await import('@/lib/drive-outreach')
-          await runDriveActivationOutreachJob(idStr)
-        })
+        const { scheduleDriveActivationOutreach } = await import('@/lib/schedule-outreach')
+        scheduleDriveActivationOutreach(drive._id.toString(), { after })
       }
       
       return NextResponse.json({
