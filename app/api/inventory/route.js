@@ -275,6 +275,8 @@ export async function POST(request) {
           date: donationDateObj,
           driveId: driveId || undefined,
           driveName: driveName || undefined,
+          component,
+          collectionType: driveId ? 'drive' : 'facility',
           volume,
           bloodType,
           unitId: finalUnitId,

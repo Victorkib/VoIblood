@@ -23,6 +23,8 @@ import {
   Activity,
 } from 'lucide-react'
 import { OrgRouteGuard } from '@/components/dashboard/org-route-guard'
+import { DonorDonationJourney } from '@/components/dashboard/donor-donation-journey'
+import { formatBloodTypeLabel } from '@/lib/donor-blood-types'
 
 const statusConfig = {
   registered: { label: 'Registered', color: 'bg-gray-100 text-gray-800', icon: Clock },
@@ -139,7 +141,9 @@ export default function DonorDetailsPage() {
             Back to Donors
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">{donor.fullName}</h1>
+            <h1 className="text-3xl font-bold text-foreground">
+              {donor.fullName || `${donor.firstName} ${donor.lastName}`}
+            </h1>
             <p className="mt-1 text-foreground/60">Donor Details & History</p>
           </div>
         </div>
@@ -184,7 +188,7 @@ export default function DonorDetailsPage() {
                 <p className="text-sm text-foreground/60">Blood Type</p>
                 <Badge className="bg-red-100 text-red-800">
                   <Droplet className="w-3 h-3 mr-1" />
-                  {donor.bloodType}
+                  {donor.bloodTypeLabel || formatBloodTypeLabel(donor.bloodType)}
                 </Badge>
               </div>
               <div>
@@ -218,8 +222,13 @@ export default function DonorDetailsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-red-600">{donor.totalDonations || 0}</div>
-            <p className="text-xs text-foreground/60 mt-1">Lives saved: {(donor.totalDonations || 0) * 3}</p>
+            <div className="text-3xl font-bold text-red-600">
+              {donor.donationStats?.totalDonations ?? donor.totalDonations ?? 0}
+            </div>
+            <p className="text-xs text-foreground/60 mt-1">
+              Lives helped (est.):{' '}
+              {donor.donationStats?.livesImpactEstimate ?? (donor.totalDonations || 0) * 3}
+            </p>
           </CardContent>
         </Card>
 
@@ -326,43 +335,10 @@ export default function DonorDetailsPage() {
         </Card>
       )}
 
-      {/* Donation History */}
-      {donor.donationHistory && donor.donationHistory.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-blue-600" />
-              Donation History
-            </CardTitle>
-            <CardDescription>Complete donation history for this donor</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {donor.donationHistory.map((donation, index) => (
-                <div key={index} className="flex items-center gap-4 p-4 bg-secondary/10 rounded-lg">
-                  <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                    <Droplet className="w-5 h-5 text-red-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold">Donation #{index + 1}</p>
-                    <p className="text-sm text-foreground/60">
-                      {donation.driveName || 'Unknown Drive'} • {donation.volume}ml
-                    </p>
-                    {donation.unitId && (
-                      <p className="text-xs text-foreground/40 font-mono">Unit: {donation.unitId}</p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">
-                      {new Date(donation.date).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <DonorDonationJourney
+        donationHistory={donor.donationHistory || []}
+        donationStats={donor.donationStats}
+      />
 
       {/* Notes */}
       {donor.notes && (

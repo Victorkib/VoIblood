@@ -171,6 +171,8 @@ export async function POST(request, { params }) {
       date: today,
       driveId: drive._id,
       driveName: drive.name,
+      component,
+      collectionType: 'drive',
       volume,
       bloodType: resolvedBloodType,
       unitId: bloodUnit.unitId,

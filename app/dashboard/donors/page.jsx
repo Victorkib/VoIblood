@@ -239,6 +239,7 @@ export default function DonorsPage() {
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Name</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Blood Type</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Donations</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Contact</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Last Donation</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Status</th>
@@ -253,6 +254,17 @@ export default function DonorsPage() {
                       <td className="px-6 py-4 text-sm">
                         <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                           {donor.bloodType}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                            (donor.totalDonations || 0) > 0
+                              ? 'bg-red-500/10 text-red-700'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {donor.totalDonations || 0}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-foreground/60">{donor.phone}</td>
@@ -284,7 +296,7 @@ export default function DonorsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-6 py-4 text-center text-foreground/60">
+                    <td colSpan="7" className="px-6 py-4 text-center text-foreground/60">
                       No donors found
                     </td>
                   </tr>
