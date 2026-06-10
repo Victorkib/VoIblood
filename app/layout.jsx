@@ -13,22 +13,21 @@ export const metadata = {
   generator: 'v0.app',
   icons: {
     icon: [
+      { url: '/favicon.ico', sizes: '32x32' },
       {
-        rel: 'icon',
         url: '/IBloodlogo.png',
         media: '(prefers-color-scheme: light)',
       },
       {
-        rel: 'icon',
         url: '/IBloodlogo.png',
         media: '(prefers-color-scheme: dark)',
       },
       {
-        rel: 'icon',
         url: '/icon.svg',
         type: 'image/svg+xml',
       },
     ],
+    shortcut: '/favicon.ico',
     apple: '/apple-icon.png',
   },
 };

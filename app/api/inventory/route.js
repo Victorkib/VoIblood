@@ -311,6 +311,7 @@ export async function POST(request) {
               bloodWorkFindings: bloodWorkFindings || bloodWorkSummary,
               recommendations,
               unitId: finalUnitId,
+              bloodType,
             })
           }
         } catch (notificationError) {

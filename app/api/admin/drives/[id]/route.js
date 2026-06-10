@@ -72,6 +72,8 @@ export async function GET(request, { params }) {
           bloodType: d.bloodType,
           status: p.status,
           source: p.source,
+          participantRole: p.participantRole || 'donor',
+          intendedDonationComponent: p.intendedDonationComponent || 'whole_blood',
           registeredAt: p.createdAt || d.registeredAt,
           notes: p.notes || '',
         }

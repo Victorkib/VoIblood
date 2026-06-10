@@ -72,7 +72,7 @@ export async function GET(request) {
       drive.status === 'active' &&
       (!drive.registrationDeadline || new Date() < new Date(drive.registrationDeadline))
 
-    const eligibility = getDonationEligibilitySummary(donor)
+    const eligibility = getDonationEligibilitySummary(donor, drive.date)
 
     const DriveParticipant = (await import('@/lib/models/DriveParticipant')).default
     const existing = await DriveParticipant.findOne({ driveId: drive._id, donorId: donor._id })
@@ -165,7 +165,7 @@ export async function POST(request) {
     }
 
     if (action === 'confirm') {
-      const eligibility = getDonationEligibilitySummary(donor)
+      const eligibility = getDonationEligibilitySummary(donor, drive.date)
       if (!eligibility.eligible) {
         return NextResponse.json(
           {

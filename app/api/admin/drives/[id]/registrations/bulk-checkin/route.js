@@ -38,6 +38,7 @@ export async function POST(request, { params }) {
     const participants = await DriveParticipant.find({
       driveId: drive._id,
       status: { $in: ['registered', 'confirmed'] },
+      participantRole: { $ne: 'supporter' },
     }).populate('donorId')
 
     let checkedIn = 0

@@ -15,6 +15,10 @@ import {
   resolveParticipantForAdmin,
   syncDonorWithParticipant,
 } from '@/lib/drive-participant-helpers'
+import {
+  isConfirmedBloodType,
+  normalizeDonorBloodType,
+} from '@/lib/donor-blood-types'
 
 export async function PUT(request, { params }) {
   try {
@@ -27,14 +31,14 @@ export async function PUT(request, { params }) {
 
     const { id: driveId, registrationId } = await params
     const body = await request.json()
-    const { status, sendNotification = true } = body
+    const { status, sendNotification = true, bloodType: bloodTypeInput } = body
 
-    if (!status) {
-      return NextResponse.json({ error: 'Status is required' }, { status: 400 })
+    if (!status && bloodTypeInput == null) {
+      return NextResponse.json({ error: 'Status or bloodType is required' }, { status: 400 })
     }
 
     const validStatuses = ['registered', 'confirmed', 'declined', 'checked_in', 'cancelled', 'no_show']
-    if (!validStatuses.includes(status)) {
+    if (status && !validStatuses.includes(status)) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
     }
 
@@ -52,18 +56,51 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
     }
 
+    if (
+      participant.participantRole === 'supporter' &&
+      status &&
+      ['checked_in', 'completed', 'no_show'].includes(status)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Drive supporters are not in the donation queue. They help by sharing the drive — not by checking in for collection.',
+        },
+        { status: 400 }
+      )
+    }
+
     const oldStatus = participant.status
-    participant.status = status
-    await participant.save()
+    if (status) {
+      participant.status = status
+      await participant.save()
+    }
 
     const donor = await Donor.findById(participant.donorId._id || participant.donorId)
+    let bloodTypeUpdated = false
+
     if (donor) {
-      await syncDonorWithParticipant(donor, participant, drive)
+      if (bloodTypeInput != null) {
+        const normalizedBloodType = normalizeDonorBloodType(bloodTypeInput, donor.bloodType)
+        if (!isConfirmedBloodType(normalizedBloodType)) {
+          return NextResponse.json(
+            { error: 'A confirmed blood type is required (not unknown)' },
+            { status: 400 }
+          )
+        }
+        donor.bloodType = normalizedBloodType
+        await donor.save()
+        bloodTypeUpdated = true
+      }
+
+      if (status) {
+        await syncDonorWithParticipant(donor, participant, drive)
+      }
     }
 
     await recountDriveParticipantStats(drive._id)
 
-    if (sendNotification && donor && status !== 'declined') {
+    if (sendNotification && donor && status && status !== 'declined') {
       try {
         await sendDonorStatusNotification(donor, drive, status)
       } catch (notifErr) {
@@ -73,12 +110,16 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json({
       success: true,
-      message: `Registration status updated to ${status}`,
+      message: status
+        ? `Registration status updated to ${status}`
+        : 'Donor blood type updated during screening',
       data: {
         registrationId: participant._id.toString(),
         oldStatus,
-        newStatus: status,
-        notificationSent: sendNotification && status !== 'declined',
+        newStatus: status || participant.status,
+        bloodType: donor?.bloodType,
+        bloodTypeUpdated,
+        notificationSent: sendNotification && status && status !== 'declined',
         updatedAt: new Date().toISOString(),
       },
     })

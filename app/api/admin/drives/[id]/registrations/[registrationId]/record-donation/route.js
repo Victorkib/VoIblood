@@ -61,6 +61,13 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
     }
 
+    if (participant.participantRole === 'supporter') {
+      return NextResponse.json(
+        { error: 'Drive supporters cannot have donations recorded. They registered to help share the drive.' },
+        { status: 400 }
+      )
+    }
+
     if (participant.status !== 'checked_in') {
       return NextResponse.json(
         { error: 'Donor must be checked in before recording donation' },
@@ -206,15 +213,28 @@ export async function POST(request, { params }) {
       console.warn('[Record Donation] Gratitude points:', gpErr.message)
     }
 
+    const bloodTypeNewlyConfirmed = !isConfirmedBloodType(donor.bloodType)
+
     if (sendNotification) {
       try {
-        await sendDonorStatusNotification(donor, drive, 'completed', {
+        const donorForNotification = {
+          ...donor.toObject(),
+          bloodType: resolvedBloodType,
+          totalDonations: newTotal,
+          lastDonationDate: today,
+          nextEligibleDate: nextEligible,
+        }
+
+        await sendDonorStatusNotification(donorForNotification, drive, 'completed', {
           donationDate: today,
           eligibilityStatus: normalizedEligibilityStatus,
           bloodWorkFindings: bloodWorkFindings || bloodWorkSummary,
           recommendations,
           unitId: bloodUnit.unitId,
           gratitudePoints,
+          bloodType: resolvedBloodType,
+          bloodTypeNewlyConfirmed,
+          nextEligibleDate: nextEligible,
         })
       } catch (notifErr) {
         console.warn('[Record Donation] Failed to send notification:', notifErr.message)

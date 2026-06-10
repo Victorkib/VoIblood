@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Search, UserPlus, X, Users } from 'lucide-react'
+import { checkDonationEligibility } from '@/lib/donation-eligibility'
 
 function donorKey(d) {
   return d?.id ?? d?._id ?? ''
@@ -88,24 +89,22 @@ export function DonorSelectorModal({ isOpen, onClose, onSelect, onAddNew, organi
   }
 
   const getEligibilityStatus = (donor) => {
-    if (!donor.lastDonationDate) {
+    const result = checkDonationEligibility({
+      lastDonationDate: donor.lastDonationDate,
+      nextEligibleDate: donor.nextEligibleDate,
+      donorStatus: donor.status,
+    })
+    if (result.eligible) {
       return { eligible: true, text: 'Eligible', color: 'text-green-600' }
     }
-
-    const lastDonation = new Date(donor.lastDonationDate)
-    const today = new Date()
-    const diffDays = Math.floor((today - lastDonation) / (1000 * 60 * 60 * 24))
-
-    if (diffDays < 56) {
-      const daysLeft = 56 - diffDays
+    if (result.daysRemaining != null) {
       return {
         eligible: false,
-        text: `${daysLeft} days left`,
+        text: `${result.daysRemaining} day(s) left`,
         color: 'text-red-600',
       }
     }
-
-    return { eligible: true, text: 'Eligible', color: 'text-green-600' }
+    return { eligible: false, text: 'Not eligible', color: 'text-red-600' }
   }
 
   return (

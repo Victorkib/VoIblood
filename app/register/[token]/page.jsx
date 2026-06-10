@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { formatBloodTypeLabel } from '@/lib/donor-blood-types'
+import {
+  checkDonationEligibility,
+  DONATION_ELIGIBILITY_CRITERIA,
+  getComponentEligibilityGrid,
+  isEligibleForAnyComponent,
+} from '@/lib/donation-eligibility'
+import { DonationEligibilityPanel } from '@/components/register/donation-eligibility-panel'
 import {
   Calendar,
   MapPin,
@@ -21,6 +28,10 @@ import {
   Shield,
   Copy,
   ExternalLink,
+  Share2,
+  Sparkles,
+  Megaphone,
+  ChevronRight,
 } from 'lucide-react'
 
 export default function RegisterPage() {
@@ -29,9 +40,12 @@ export default function RegisterPage() {
   const [drive, setDrive] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [registrationStep, setRegistrationStep] = useState('landing') // landing, form, otp, success, existing_donor
+  const [registrationStep, setRegistrationStep] = useState('landing')
+  /** donor = donating blood | supporter = share-only when ineligible or chosen */
+  const [registrationMode, setRegistrationMode] = useState('donor')
   /** Rich 409 payload when email/phone already exists for this org (same drive). */
   const [existingDonorHelp, setExistingDonorHelp] = useState(null)
+  const [notEligibleHelp, setNotEligibleHelp] = useState(null)
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -43,6 +57,7 @@ export default function RegisterPage() {
     weight: '',
     hasDonatedBefore: false,
     lastDonationDate: '',
+    intendedDonationComponent: 'whole_blood',
     medicalConditions: '',
     medications: '',
     consentGiven: false,
@@ -60,6 +75,92 @@ export default function RegisterPage() {
   const [donorData, setDonorData] = useState(null)
   const [verificationToken, setVerificationToken] = useState(null)
   const [verified, setVerified] = useState(false)
+
+  const [landingEligibility, setLandingEligibility] = useState({
+    hasDonatedBefore: false,
+    lastDonationDate: '',
+  })
+
+  const shareUrl =
+    typeof window !== 'undefined' && params.token
+      ? `${window.location.origin}/register/${params.token}`
+      : ''
+
+  const landingAnyEligible = useMemo(() => {
+    if (!drive?.date) return true
+    if (!landingEligibility.hasDonatedBefore) return true
+    if (!landingEligibility.lastDonationDate) return null
+    return isEligibleForAnyComponent({
+      lastDonationDate: landingEligibility.lastDonationDate,
+      driveDate: drive.date,
+    })
+  }, [drive?.date, landingEligibility])
+
+  const donationEligibilityPreview = useMemo(() => {
+    if (!drive?.date || registrationMode === 'supporter') return null
+    if (!formData.hasDonatedBefore && !formData.lastDonationDate) return null
+    if (formData.hasDonatedBefore && !formData.lastDonationDate) {
+      return {
+        eligible: null,
+        needsDate: true,
+        criteria: DONATION_ELIGIBILITY_CRITERIA,
+      }
+    }
+    return {
+      ...checkDonationEligibility({
+        lastDonationDate: formData.lastDonationDate,
+        driveDate: drive.date,
+        component: formData.intendedDonationComponent,
+      }),
+      needsDate: false,
+    }
+  }, [
+    drive?.date,
+    formData.hasDonatedBefore,
+    formData.lastDonationDate,
+    formData.intendedDonationComponent,
+    registrationMode,
+  ])
+
+  useEffect(() => {
+    if (registrationMode !== 'donor' || !drive?.date || !formData.hasDonatedBefore || !formData.lastDonationDate) {
+      return
+    }
+    const rows = getComponentEligibilityGrid({
+      lastDonationDate: formData.lastDonationDate,
+      driveDate: drive.date,
+    })
+    const current = rows.find((r) => r.key === formData.intendedDonationComponent)
+    if (current?.eligible) return
+    const firstEligible = rows.find((r) => r.eligible)
+    if (firstEligible) {
+      setFormData((prev) => ({ ...prev, intendedDonationComponent: firstEligible.key }))
+    }
+  }, [
+    registrationMode,
+    drive?.date,
+    formData.hasDonatedBefore,
+    formData.lastDonationDate,
+    formData.intendedDonationComponent,
+  ])
+
+  const openRegistration = (mode = 'donor') => {
+    setRegistrationMode(mode)
+    if (mode === 'supporter') {
+      setFormData((prev) => ({
+        ...prev,
+        hasDonatedBefore: landingEligibility.hasDonatedBefore,
+        lastDonationDate: landingEligibility.lastDonationDate,
+      }))
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        hasDonatedBefore: landingEligibility.hasDonatedBefore,
+        lastDonationDate: landingEligibility.lastDonationDate,
+      }))
+    }
+    setRegistrationStep('form')
+  }
 
   // Load verification state from localStorage on mount
   useEffect(() => {
@@ -308,6 +409,28 @@ export default function RegisterPage() {
       return
     }
 
+    if (
+      registrationMode === 'donor' &&
+      formData.hasDonatedBefore &&
+      !formData.lastDonationDate
+    ) {
+      setActionError('Please enter your last donation date so we can check eligibility for this drive')
+      return
+    }
+
+    if (
+      registrationMode === 'donor' &&
+      donationEligibilityPreview &&
+      donationEligibilityPreview.eligible === false
+    ) {
+      setNotEligibleHelp({
+        message: donationEligibilityPreview.message,
+        eligibility: donationEligibilityPreview,
+      })
+      setRegistrationStep('not_eligible')
+      return
+    }
+
     // Check if OTP was verified
     if (!verified || !verificationToken) {
       setActionError('Please verify your phone/email with OTP first')
@@ -326,7 +449,9 @@ export default function RegisterPage() {
         body: JSON.stringify({
           ...formData,
           driveToken: params.token,
-          verificationToken, // Include verification token
+          verificationToken,
+          registerAsSupporter: registrationMode === 'supporter',
+          intendedDonationComponent: formData.intendedDonationComponent,
         }),
       })
 
@@ -363,10 +488,19 @@ export default function RegisterPage() {
           fullName,
           bloodType,
           profileUrl,
+          shareUrl: data.data?.shareUrl || shareUrl,
+          participantRole: data.data?.participantRole || data.supporter ? 'supporter' : 'donor',
+          intendedDonationComponent: data.data?.intendedDonationComponent,
           welcomeMessage: data.message || null,
         })
 
         setRegistrationStep('success')
+      } else if (res.status === 409 && data.notEligible) {
+        setNotEligibleHelp({
+          message: data.message || data.error,
+          eligibility: data.eligibility,
+        })
+        setRegistrationStep('not_eligible')
       } else if (res.status === 409 && data.duplicate) {
         setExistingDonorHelp({
           message: data.message || data.error,
@@ -504,32 +638,148 @@ export default function RegisterPage() {
               </div>
             </Card>
 
-            {/* Registration Button */}
-            <div className="text-center">
+            {/* Eligibility preview — before starting the form */}
+            <Card className="mb-8 overflow-hidden border-0 shadow-xl shadow-red-100/50">
+              <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-6 py-4">
+                <p className="text-xs font-semibold uppercase tracking-widest text-red-300">
+                  Step 1 — Know before you go
+                </p>
+                <h3 className="text-xl font-bold text-white mt-1">Am I eligible to donate?</h3>
+              </div>
+              <div className="p-6 space-y-5 bg-white">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="landing-donated-before">Have you donated blood before?</Label>
+                    <select
+                      id="landing-donated-before"
+                      value={landingEligibility.hasDonatedBefore ? 'yes' : 'no'}
+                      onChange={(e) =>
+                        setLandingEligibility((prev) => ({
+                          ...prev,
+                          hasDonatedBefore: e.target.value === 'yes',
+                          lastDonationDate: e.target.value === 'yes' ? prev.lastDonationDate : '',
+                        }))
+                      }
+                      className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium"
+                    >
+                      <option value="no">No — first time</option>
+                      <option value="yes">Yes — I have donated before</option>
+                    </select>
+                  </div>
+                  {landingEligibility.hasDonatedBefore && (
+                    <div>
+                      <Label htmlFor="landing-last-donation">Last donation date</Label>
+                      <Input
+                        id="landing-last-donation"
+                        type="date"
+                        value={landingEligibility.lastDonationDate}
+                        onChange={(e) =>
+                          setLandingEligibility((prev) => ({
+                            ...prev,
+                            lastDonationDate: e.target.value,
+                          }))
+                        }
+                        max={new Date().toISOString().split('T')[0]}
+                        className="mt-1.5 rounded-xl"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <DonationEligibilityPanel
+                  driveDate={drive.date}
+                  hasDonatedBefore={landingEligibility.hasDonatedBefore}
+                  lastDonationDate={landingEligibility.lastDonationDate}
+                  showComponentPicker={false}
+                  compact={false}
+                />
+              </div>
+            </Card>
+
+            {/* Registration CTAs */}
+            <div className="space-y-4">
+              {(landingAnyEligible === true || landingAnyEligible === null) && (
+                <Button
+                  size="lg"
+                  className="w-full h-14 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white text-lg shadow-lg shadow-red-200/60 rounded-xl"
+                  onClick={() => openRegistration('donor')}
+                  disabled={landingAnyEligible === null}
+                >
+                  <Heart className="w-5 h-5 mr-2" />
+                  Register to donate
+                  <ChevronRight className="w-5 h-5 ml-auto opacity-80" />
+                </Button>
+              )}
+
+              {landingAnyEligible === false && (
+                <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-5 text-center">
+                  <Megaphone className="w-10 h-10 text-amber-600 mx-auto mb-3" />
+                  <p className="text-sm text-amber-900 font-medium mb-4">
+                    You are not eligible to donate at this drive date — but you can still save lives as a
+                    <strong> drive supporter</strong>.
+                  </p>
+                  <Button
+                    size="lg"
+                    className="w-full h-12 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded-xl"
+                    onClick={() => openRegistration('supporter')}
+                  >
+                    <Share2 className="w-5 h-5 mr-2" />
+                    Register as drive supporter
+                  </Button>
+                </div>
+              )}
+
               <Button
+                variant="outline"
                 size="lg"
-                className="bg-red-600 hover:bg-red-700 text-white px-8 py-6 text-lg"
-                onClick={() => setRegistrationStep('form')}
+                className="w-full h-12 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50"
+                onClick={() => openRegistration('supporter')}
               >
-                <Heart className="w-5 h-5 mr-2" />
-                Register Now
+                <Sparkles className="w-5 h-5 mr-2 text-amber-600" />
+                I want to help by sharing (supporter)
               </Button>
-              <p className="text-sm text-gray-500 mt-4">
-                Takes about 5 minutes to complete
+
+              <p className="text-center text-sm text-gray-500">
+                Donor registration takes about 5 minutes · Supporters ~3 minutes
               </p>
             </div>
           </>
         )}
 
         {registrationStep === 'form' && (
-          <Card>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Donor Registration</h2>
-                <Button variant="outline" size="sm" onClick={() => setRegistrationStep('landing')}>
+          <Card className="overflow-hidden shadow-xl border-0">
+            <div
+              className={`px-6 py-5 ${
+                registrationMode === 'supporter'
+                  ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white'
+                  : 'bg-gradient-to-r from-red-600 to-rose-600 text-white'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider opacity-90">
+                    {registrationMode === 'supporter' ? 'Drive supporter' : 'Blood donor'}
+                  </p>
+                  <h2 className="text-2xl font-bold mt-0.5">
+                    {registrationMode === 'supporter' ? 'Share & support' : 'Donor registration'}
+                  </h2>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="bg-white/20 text-white border-0 hover:bg-white/30"
+                  onClick={() => setRegistrationStep('landing')}
+                >
                   Back
                 </Button>
               </div>
+              {registrationMode === 'supporter' && (
+                <p className="text-sm text-amber-50 mt-2 max-w-xl">
+                  You will not be in the donation queue. Help us reach eligible donors by sharing this drive.
+                </p>
+              )}
+            </div>
+            <div className="p-6">
 
               {/* Verification Status Banner */}
               {verified && verificationToken && (
@@ -713,30 +963,32 @@ export default function RegisterPage() {
                       )}
                     </div>
                   )}
-                  <div className="grid md:grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="bloodType">Blood Type</Label>
-                      <select
-                        id="bloodType"
-                        name="bloodType"
-                        value={formData.bloodType}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
-                      >
-                        <option value="unknown">I don&apos;t know yet</option>
-                        <option value="O+">O+</option>
-                        <option value="O-">O-</option>
-                        <option value="A+">A+</option>
-                        <option value="A-">A-</option>
-                        <option value="B+">B+</option>
-                        <option value="B-">B-</option>
-                        <option value="AB+">AB+</option>
-                        <option value="AB-">AB-</option>
-                      </select>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Choose &quot;I don&apos;t know yet&quot; if unsure — staff will confirm during screening.
-                      </p>
-                    </div>
+                  <div className={`grid gap-4 ${registrationMode === 'donor' ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+                    {registrationMode === 'donor' ? (
+                      <div>
+                        <Label htmlFor="bloodType">Blood Type</Label>
+                        <select
+                          id="bloodType"
+                          name="bloodType"
+                          value={formData.bloodType}
+                          onChange={handleInputChange}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
+                        >
+                          <option value="unknown">I don&apos;t know yet</option>
+                          <option value="O+">O+</option>
+                          <option value="O-">O-</option>
+                          <option value="A+">A+</option>
+                          <option value="A-">A-</option>
+                          <option value="B+">B+</option>
+                          <option value="B-">B-</option>
+                          <option value="AB+">AB+</option>
+                          <option value="AB-">AB-</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Choose &quot;I don&apos;t know yet&quot; if unsure - staff will confirm during screening.
+                        </p>
+                      </div>
+                    ) : null}
                     <div>
                       <Label htmlFor="dateOfBirth">Date of Birth *</Label>
                       <Input
@@ -763,22 +1015,26 @@ export default function RegisterPage() {
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <Label htmlFor="weight">Weight (kg)</Label>
-                    <Input
-                      id="weight"
-                      name="weight"
-                      type="number"
-                      value={formData.weight}
-                      onChange={handleInputChange}
-                      placeholder="e.g., 70"
-                    />
-                  </div>
+                  {registrationMode === 'donor' && (
+                    <div>
+                      <Label htmlFor="weight">Weight (kg)</Label>
+                      <Input
+                        id="weight"
+                        name="weight"
+                        type="number"
+                        value={formData.weight}
+                        onChange={handleInputChange}
+                        placeholder="e.g., 70"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Medical Info */}
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-gray-900">Medical Information</h3>
+                  <h3 className="font-semibold text-gray-900">
+                    {registrationMode === 'supporter' ? 'Your donation history (optional)' : 'Medical information'}
+                  </h3>
                   <div>
                     <Label htmlFor="hasDonatedBefore">Have you donated blood before?</Label>
                     <select
@@ -798,23 +1054,44 @@ export default function RegisterPage() {
                       <option value="yes">Yes — I have donated before (anywhere)</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
-                      This helps us understand your experience. You can still register for this drive either way.
+                      We check whole blood, platelet, and plasma spacing rules against this drive date.
                     </p>
                   </div>
                   {formData.hasDonatedBefore && (
                     <div>
-                      <Label htmlFor="lastDonationDate">Last Donation Date (optional)</Label>
+                      <Label htmlFor="lastDonationDate">Last Donation Date *</Label>
                       <Input
                         id="lastDonationDate"
                         name="lastDonationDate"
                         type="date"
                         value={formData.lastDonationDate}
                         onChange={handleInputChange}
+                        required={registrationMode === 'donor'}
+                        max={new Date().toISOString().split('T')[0]}
                       />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Compared to drive date{' '}
+                        {drive ? new Date(drive.date).toLocaleDateString() : 'on file'} for each component type.
+                      </p>
                     </div>
                   )}
-                  <div>
-                    <Label htmlFor="medicalConditions">Medical Conditions (if any)</Label>
+                  {registrationMode === 'donor' && (
+                    <DonationEligibilityPanel
+                      driveDate={drive.date}
+                      hasDonatedBefore={formData.hasDonatedBefore}
+                      lastDonationDate={formData.lastDonationDate}
+                      intendedComponent={formData.intendedDonationComponent}
+                      onIntendedComponentChange={(v) =>
+                        setFormData((prev) => ({ ...prev, intendedDonationComponent: v }))
+                      }
+                      showComponentPicker={formData.hasDonatedBefore && Boolean(formData.lastDonationDate)}
+                      compact={!formData.hasDonatedBefore}
+                      className="border-t border-slate-100 pt-4"
+                    />
+                  )}
+                  {registrationMode === 'donor' && (
+                    <div>
+                      <Label htmlFor="medicalConditions">Medical Conditions (if any)</Label>
                     <Textarea
                       id="medicalConditions"
                       name="medicalConditions"
@@ -823,22 +1100,31 @@ export default function RegisterPage() {
                       placeholder="List any medical conditions..."
                       rows={3}
                     />
-                  </div>
-                  <div>
-                    <Label htmlFor="medications">Current Medications (if any)</Label>
-                    <Textarea
-                      id="medications"
-                      name="medications"
-                      value={formData.medications}
-                      onChange={handleInputChange}
-                      placeholder="List any current medications..."
-                      rows={3}
-                    />
-                  </div>
+                    </div>
+                  )}
+                  {registrationMode === 'donor' && (
+                    <div>
+                      <Label htmlFor="medications">Current Medications (if any)</Label>
+                      <Textarea
+                        id="medications"
+                        name="medications"
+                        value={formData.medications}
+                        onChange={handleInputChange}
+                        placeholder="List any current medications..."
+                        rows={3}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Consent */}
-                <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+                <div
+                  className={`p-4 rounded-xl border ${
+                    registrationMode === 'supporter'
+                      ? 'bg-amber-50 border-amber-200'
+                      : 'bg-yellow-50 border-yellow-200'
+                  }`}
+                >
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -848,8 +1134,18 @@ export default function RegisterPage() {
                       className="mt-1"
                     />
                     <span className="text-sm text-gray-700">
-                      I consent to donating blood and confirm that the information provided is accurate. 
-                      I understand that my data will be used for donation purposes only.
+                      {registrationMode === 'supporter' ? (
+                        <>
+                          I consent to be contacted about this blood drive and to help promote it by sharing
+                          the registration link. I understand I am registering as a supporter, not as a blood
+                          donor for this drive.
+                        </>
+                      ) : (
+                        <>
+                          I consent to donating blood and confirm that the information provided is accurate. I
+                          understand that my data will be used for donation purposes only.
+                        </>
+                      )}
                     </span>
                   </label>
                 </div>
@@ -874,15 +1170,97 @@ export default function RegisterPage() {
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         Registering...
                       </>
+                    ) : registrationMode === 'supporter' ? (
+                      <>
+                        <Share2 className="w-4 h-4 mr-2" />
+                        Join as supporter
+                      </>
                     ) : (
                       <>
                         <Heart className="w-4 h-4 mr-2" />
-                        Complete Registration
+                        Complete registration
                       </>
                     )}
                   </Button>
                 </div>
               </form>
+            </div>
+          </Card>
+        )}
+
+        {registrationStep === 'not_eligible' && notEligibleHelp && drive && (
+          <Card className="overflow-hidden border-amber-200 shadow-xl">
+            <div className="h-2 w-full bg-gradient-to-r from-amber-500 via-orange-500 to-red-500" />
+            <div className="p-8 md:p-10">
+              <div className="flex flex-col items-center text-center max-w-lg mx-auto">
+                <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center mb-5">
+                  <Clock className="w-9 h-9 text-amber-700" />
+                </div>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                  Not eligible for this drive yet
+                </h2>
+                <p className="text-gray-600 leading-relaxed mb-6">{notEligibleHelp.message}</p>
+                {notEligibleHelp.eligibility?.nextEligibleDisplay && (
+                  <p className="text-sm font-semibold text-amber-800 mb-6">
+                    Next eligible date: {notEligibleHelp.eligibility.nextEligibleDisplay}
+                  </p>
+                )}
+                <div className="w-full max-w-md rounded-xl bg-slate-50 border border-slate-200 p-4 text-left mb-6">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                    Why this matters
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700">
+                    {(notEligibleHelp.eligibility?.criteria || DONATION_ELIGIBILITY_CRITERIA).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="w-full max-w-md rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 p-5 text-left mb-6 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Megaphone className="w-5 h-5 text-amber-700" />
+                    <p className="text-sm font-bold text-amber-900">Become a drive supporter</p>
+                  </div>
+                  <p className="text-sm text-amber-800 mb-4">
+                    Register to share this drive — no donation required. We will email you the link and tips to
+                    help eligible friends sign up.
+                  </p>
+                  <Button
+                    className="w-full h-12 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded-xl"
+                    onClick={() => {
+                      setNotEligibleHelp(null)
+                      openRegistration('supporter')
+                    }}
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Register as supporter
+                  </Button>
+                  {params.token && (
+                    <Button
+                      variant="outline"
+                      className="mt-3 w-full border-amber-300 text-amber-900 hover:bg-amber-100"
+                      onClick={() => {
+                        const url = `${window.location.origin}/register/${params.token}`
+                        navigator.clipboard.writeText(url)
+                        setActionSuccess('Registration link copied!')
+                        setTimeout(() => setActionSuccess(null), 2500)
+                      }}
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy link only
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setNotEligibleHelp(null)
+                    setRegistrationMode('donor')
+                    setRegistrationStep('form')
+                  }}
+                >
+                  Review my answers
+                </Button>
+              </div>
             </div>
           </Card>
         )}
@@ -962,14 +1340,36 @@ export default function RegisterPage() {
         )}
 
         {registrationStep === 'success' && (
-          <Card>
+          <Card className="overflow-hidden shadow-xl border-0">
+            <div
+              className={`h-2 w-full ${
+                donorData?.participantRole === 'supporter'
+                  ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600'
+                  : 'bg-gradient-to-r from-red-500 via-rose-500 to-red-600'
+              }`}
+            />
             <div className="p-6 text-center">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-12 h-12 text-green-600" />
+              <div
+                className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                  donorData?.participantRole === 'supporter' ? 'bg-amber-100' : 'bg-green-100'
+                }`}
+              >
+                {donorData?.participantRole === 'supporter' ? (
+                  <Share2 className="w-12 h-12 text-amber-600" />
+                ) : (
+                  <CheckCircle className="w-12 h-12 text-green-600" />
+                )}
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Complete!</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                {donorData?.participantRole === 'supporter'
+                  ? 'You are a drive supporter!'
+                  : 'Registration complete!'}
+              </h2>
               <p className="text-gray-600 mb-6">
-                {donorData?.welcomeMessage || 'Thank you for registering to donate blood'}
+                {donorData?.welcomeMessage ||
+                  (donorData?.participantRole === 'supporter'
+                    ? 'Thank you for helping spread the word.'
+                    : 'Thank you for registering to donate blood')}
               </p>
 
               {/* Donor Information Card */}
@@ -1051,46 +1451,73 @@ export default function RegisterPage() {
 
               {/* Action Buttons */}
               <div className="space-y-3">
-                <Button
-                  onClick={() => {
-                    console.log('[View Profile] donorData:', donorData)
-                    console.log('[View Profile] donorToken:', donorData?.donorToken)
-                    
-                    if (donorData?.donorToken) {
-                      const profileUrl = `/donor/${donorData.donorToken}`
-                      console.log('[View Profile] Navigating to:', profileUrl)
-                      router.push(profileUrl)
-                    } else {
-                      setActionError('Donor ID not found. Please contact support.')
-                      setTimeout(() => setActionError(null), 5000)
-                    }
-                  }}
-                  className="w-full bg-red-600 hover:bg-red-700"
-                  disabled={!donorData?.donorToken}
-                >
-                  <Heart className="w-4 h-4 mr-2" />
-                  View My Donor Profile
-                </Button>
-
-                <Button
-                  onClick={() => {
-                    // Copy donor token to clipboard
-                    if (donorData?.donorToken) {
-                      navigator.clipboard.writeText(donorData.donorToken)
-                      setActionSuccess('✅ Donor ID copied to clipboard!')
-                      setTimeout(() => setActionSuccess(null), 3000)
-                    } else {
-                      setActionError('Donor ID not available to copy')
-                      setTimeout(() => setActionError(null), 5000)
-                    }
-                  }}
-                  variant="outline"
-                  className="w-full"
-                  disabled={!donorData?.donorToken}
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy Donor ID
-                </Button>
+                {donorData?.participantRole === 'supporter' ? (
+                  <>
+                    <Button
+                      onClick={() => {
+                        const url = donorData.shareUrl || shareUrl
+                        if (url) {
+                          navigator.clipboard.writeText(url)
+                          setActionSuccess('Drive link copied — share it with eligible donors!')
+                          setTimeout(() => setActionSuccess(null), 3000)
+                        }
+                      }}
+                      className="w-full h-12 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 rounded-xl"
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy drive registration link
+                    </Button>
+                    {typeof navigator !== 'undefined' && navigator.share && (
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() =>
+                          navigator.share({
+                            title: drive.name,
+                            text: `Join our blood drive: ${drive.name}`,
+                            url: donorData.shareUrl || shareUrl,
+                          })
+                        }
+                      >
+                        <Share2 className="w-4 h-4 mr-2" />
+                        Share via device
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      onClick={() => {
+                        if (donorData?.donorToken) {
+                          router.push(`/donor/${donorData.donorToken}`)
+                        } else {
+                          setActionError('Donor ID not found. Please contact support.')
+                          setTimeout(() => setActionError(null), 5000)
+                        }
+                      }}
+                      className="w-full bg-red-600 hover:bg-red-700"
+                      disabled={!donorData?.donorToken}
+                    >
+                      <Heart className="w-4 h-4 mr-2" />
+                      View my donor profile
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        if (donorData?.donorToken) {
+                          navigator.clipboard.writeText(donorData.donorToken)
+                          setActionSuccess('Donor ID copied to clipboard!')
+                          setTimeout(() => setActionSuccess(null), 3000)
+                        }
+                      }}
+                      variant="outline"
+                      className="w-full"
+                      disabled={!donorData?.donorToken}
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy donor ID
+                    </Button>
+                  </>
+                )}
               </div>
 
               {actionSuccess && (

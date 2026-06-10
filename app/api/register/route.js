@@ -16,6 +16,12 @@ import Donor from '@/lib/models/Donor'
 import VerificationToken from '@/lib/models/VerificationToken'
 import { normalizeDonorBloodType, isConfirmedBloodType } from '@/lib/donor-blood-types'
 import { getAppUrl } from '@/lib/app-url'
+import {
+  calculateNextEligibleDate,
+  checkDonationEligibility,
+  DONATION_COMPONENT_KEYS,
+  resolveMostRecentDonationDate,
+} from '@/lib/donation-eligibility'
 
 const ACTIVE_DRIVE_PARTICIPANT_STATUSES = new Set([
   'registered',
@@ -121,7 +127,14 @@ export async function POST(request) {
       medicalConditions,
       medications,
       consentGiven,
+      registerAsSupporter = false,
+      intendedDonationComponent = 'whole_blood',
     } = body
+
+    const isSupporterRegistration = Boolean(registerAsSupporter)
+    const resolvedComponent = DONATION_COMPONENT_KEYS.includes(intendedDonationComponent)
+      ? intendedDonationComponent
+      : 'whole_blood'
 
     console.log('[Register API] Registration request received:', {
       driveToken: driveToken ? 'present' : 'missing',
@@ -237,6 +250,54 @@ export async function POST(request) {
 
     const resolvedBloodType = normalizeDonorBloodType(bloodType)
 
+    if (!isSupporterRegistration && hasDonatedBefore && !lastDonationDate) {
+      return NextResponse.json(
+        {
+          error: 'Please provide your last donation date so we can verify eligibility for this drive.',
+        },
+        { status: 400 }
+      )
+    }
+
+    const recentDonationDate = resolveMostRecentDonationDate(
+      lastDonationDate,
+      existingDonor?.lastDonationDate
+    )
+
+    if (!isSupporterRegistration && (hasDonatedBefore || recentDonationDate)) {
+      const eligibility = checkDonationEligibility({
+        lastDonationDate: recentDonationDate,
+        nextEligibleDate: existingDonor?.nextEligibleDate,
+        driveDate: drive.date,
+        donorStatus: existingDonor?.status,
+        component: resolvedComponent,
+      })
+
+      if (!eligibility.eligible) {
+        return NextResponse.json(
+          {
+            error: 'not_eligible',
+            notEligible: true,
+            message:
+              eligibility.message ||
+              'You are not yet eligible to donate at this drive based on your last donation date.',
+            eligibility: {
+              ...eligibility,
+              driveDate: drive.date,
+              lastDonationDate: recentDonationDate,
+              intendedDonationComponent: resolvedComponent,
+              canRegisterAsSupporter: true,
+            },
+          },
+          { status: 409 }
+        )
+      }
+    }
+
+    const computedNextEligible = recentDonationDate
+      ? calculateNextEligibleDate(recentDonationDate)
+      : existingDonor?.nextEligibleDate || null
+
     if (existingDonor) {
       console.log('[Register API] Returning donor found:', existingDonor._id)
 
@@ -249,12 +310,16 @@ export async function POST(request) {
         donorId: existingDonor._id,
         driveId: drive._id,
       })
-        .select('status source')
+        .select('status source participantRole')
         .lean()
 
       const appUrl = getAppUrl(request)
 
-      if (participant && ACTIVE_DRIVE_PARTICIPANT_STATUSES.has(participant.status)) {
+      if (
+        participant &&
+        ACTIVE_DRIVE_PARTICIPANT_STATUSES.has(participant.status) &&
+        !(isSupporterRegistration && participant.participantRole === 'supporter')
+      ) {
         const { createDriveRsvpToken, buildRsvpUrl } = await import('@/lib/rsvp-jwt')
         const { getOrCreateRsvpSmsLink } = await import('@/lib/rsvp-sms-link')
         let rsvpUrl = null
@@ -305,8 +370,9 @@ export async function POST(request) {
         status: 'registered',
       }
 
-      if (lastDonationDate) {
-        donorUpdates.lastDonationDate = new Date(lastDonationDate)
+      if (recentDonationDate) {
+        donorUpdates.lastDonationDate = recentDonationDate
+        donorUpdates.nextEligibleDate = computedNextEligible
       }
       if (medicalConditions) donorUpdates.medicalConditions = medicalConditions
       if (medications) donorUpdates.medications = medications
@@ -322,28 +388,51 @@ export async function POST(request) {
       const participantDoc = await upsertParticipant(drive._id, existingDonor._id, {
         source: 'public',
         status: 'registered',
+        participantRole: isSupporterRegistration ? 'supporter' : 'donor',
+        intendedDonationComponent: isSupporterRegistration ? undefined : resolvedComponent,
       })
 
       const refreshedDonor = await Donor.findById(existingDonor._id)
-      await syncDonorWithParticipant(refreshedDonor, participantDoc, drive)
+      if (!isSupporterRegistration) {
+        await syncDonorWithParticipant(refreshedDonor, participantDoc, drive)
+      }
       await VerificationToken.useToken(verificationToken)
 
       const profileUrl = refreshedDonor.donorToken
         ? `${appUrl}/donor/${refreshedDonor.donorToken}`
         : null
+      const shareUrl = `${appUrl}/register/${drive.registrationToken}`
 
-      if (refreshedDonor.email && profileUrl) {
+      if (refreshedDonor.email) {
         try {
           const Organization = (await import('@/lib/models/Organization')).default
           const org = await Organization.findById(drive.organizationId).select('name').lean()
-          const { sendDonorDriveRegistrationEmail } = await import('@/lib/org-onboarding/emails')
-          await sendDonorDriveRegistrationEmail({
-            to: refreshedDonor.email,
-            donorName: `${refreshedDonor.firstName} ${refreshedDonor.lastName}`,
-            driveName: drive.name,
-            profileUrl,
-            organizationName: org?.name || '',
-          })
+          if (isSupporterRegistration) {
+            const { sendSupporterDriveRegistrationEmail } = await import('@/lib/org-onboarding/emails')
+            const nextEligible = checkDonationEligibility({
+              lastDonationDate: recentDonationDate,
+              nextEligibleDate: refreshedDonor.nextEligibleDate,
+              driveDate: drive.date,
+              component: 'whole_blood',
+            })
+            await sendSupporterDriveRegistrationEmail({
+              to: refreshedDonor.email,
+              supporterName: `${refreshedDonor.firstName} ${refreshedDonor.lastName}`,
+              driveName: drive.name,
+              shareUrl,
+              organizationName: org?.name || '',
+              nextEligibleDisplay: nextEligible.nextEligibleDisplay,
+            })
+          } else if (profileUrl) {
+            const { sendDonorDriveRegistrationEmail } = await import('@/lib/org-onboarding/emails')
+            await sendDonorDriveRegistrationEmail({
+              to: refreshedDonor.email,
+              donorName: `${refreshedDonor.firstName} ${refreshedDonor.lastName}`,
+              driveName: drive.name,
+              profileUrl,
+              organizationName: org?.name || '',
+            })
+          }
         } catch (emailErr) {
           console.warn('[Register API] Returning donor welcome email failed:', emailErr.message)
         }
@@ -355,13 +444,19 @@ export async function POST(request) {
       return NextResponse.json({
         success: true,
         returningDonor: true,
-        message: `Welcome back! You're registered for ${drive.name}.`,
+        supporter: isSupporterRegistration,
+        message: isSupporterRegistration
+          ? `Thank you! You're a drive supporter for ${drive.name}. Share the link to help us reach more donors.`
+          : `Welcome back! You're registered for ${drive.name}.`,
         data: {
           donorId: refreshedDonor._id.toString(),
           donorToken: refreshedDonor.donorToken,
           fullName: `${refreshedDonor.firstName} ${refreshedDonor.lastName}`,
           bloodType: refreshedDonor.bloodType,
           profileUrl,
+          shareUrl,
+          participantRole: isSupporterRegistration ? 'supporter' : 'donor',
+          intendedDonationComponent: isSupporterRegistration ? null : resolvedComponent,
         },
       }, { status: 200 })
     }
@@ -400,7 +495,8 @@ export async function POST(request) {
       gender,
       weight: weight ? parseFloat(weight) : null,
       hasDonatedBefore,
-      lastDonationDate: lastDonationDate ? new Date(lastDonationDate) : null,
+      lastDonationDate: recentDonationDate || null,
+      nextEligibleDate: computedNextEligible || null,
       medicalConditions: medicalConditions || '',
       medications: medications || '',
       consentGiven,
@@ -423,7 +519,12 @@ export async function POST(request) {
     console.log('[Register API] Donor created successfully:', donor._id)
 
     const { upsertParticipant } = await import('@/lib/drive-participant-helpers')
-    await upsertParticipant(drive._id, donor._id, { source: 'public', status: 'registered' })
+    await upsertParticipant(drive._id, donor._id, {
+      source: 'public',
+      status: 'registered',
+      participantRole: isSupporterRegistration ? 'supporter' : 'donor',
+      intendedDonationComponent: isSupporterRegistration ? undefined : resolvedComponent,
+    })
 
     await VerificationToken.useToken(verificationToken)
     console.log('[Register API] Verification token marked as used')
@@ -431,18 +532,37 @@ export async function POST(request) {
     const appUrl = getAppUrl(request)
     const profileUrl = donor.donorToken ? `${appUrl}/donor/${donor.donorToken}` : null
 
-    if (donor.email && profileUrl) {
+    const shareUrl = `${appUrl}/register/${drive.registrationToken}`
+
+    if (donor.email) {
       try {
         const Organization = (await import('@/lib/models/Organization')).default
         const org = await Organization.findById(drive.organizationId).select('name').lean()
-        const { sendDonorDriveRegistrationEmail } = await import('@/lib/org-onboarding/emails')
-        await sendDonorDriveRegistrationEmail({
-          to: donor.email,
-          donorName: `${firstName} ${lastName}`,
-          driveName: drive.name,
-          profileUrl,
-          organizationName: org?.name || '',
-        })
+        if (isSupporterRegistration) {
+          const { sendSupporterDriveRegistrationEmail } = await import('@/lib/org-onboarding/emails')
+          const nextEligible = checkDonationEligibility({
+            lastDonationDate: recentDonationDate,
+            driveDate: drive.date,
+            component: 'whole_blood',
+          })
+          await sendSupporterDriveRegistrationEmail({
+            to: donor.email,
+            supporterName: `${firstName} ${lastName}`,
+            driveName: drive.name,
+            shareUrl,
+            organizationName: org?.name || '',
+            nextEligibleDisplay: nextEligible.nextEligibleDisplay,
+          })
+        } else if (profileUrl) {
+          const { sendDonorDriveRegistrationEmail } = await import('@/lib/org-onboarding/emails')
+          await sendDonorDriveRegistrationEmail({
+            to: donor.email,
+            donorName: `${firstName} ${lastName}`,
+            driveName: drive.name,
+            profileUrl,
+            organizationName: org?.name || '',
+          })
+        }
       } catch (emailErr) {
         console.warn('[Register API] Donor welcome email failed:', emailErr.message)
       }
@@ -453,13 +573,19 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Registration successful! Check your email for your donor profile link.',
+      supporter: isSupporterRegistration,
+      message: isSupporterRegistration
+        ? 'Thank you for joining as a drive supporter! Check your email for sharing tools.'
+        : 'Registration successful! Check your email for your donor profile link.',
       data: {
         donorId: donor._id.toString(),
         donorToken: donor.donorToken,
         fullName: `${firstName} ${lastName}`,
         bloodType: resolvedBloodType,
         profileUrl,
+        shareUrl,
+        participantRole: isSupporterRegistration ? 'supporter' : 'donor',
+        intendedDonationComponent: isSupporterRegistration ? null : resolvedComponent,
       },
     }, { status: 201 })
   } catch (error) {

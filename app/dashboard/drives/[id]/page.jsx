@@ -65,7 +65,9 @@ import {
   Activity,
   Sparkles,
   Info,
+  Megaphone,
 } from 'lucide-react'
+import { DONATION_COMPONENTS } from '@/lib/donation-eligibility'
 import { OrgRouteGuard } from '@/components/dashboard/org-route-guard'
 import { CONFIRMED_BLOOD_TYPES, formatBloodTypeLabel } from '@/lib/donor-blood-types'
 
@@ -148,6 +150,7 @@ export default function DriveDetailsPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [bloodTypeFilter, setBloodTypeFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState('all')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionSuccess, setActionSuccess] = useState(null)
   const [actionError, setActionError] = useState(null)
@@ -183,6 +186,8 @@ export default function DriveDetailsPage() {
     bloodType: '',
   })
   const [recordDonationLoading, setRecordDonationLoading] = useState(false)
+  const [screeningBloodType, setScreeningBloodType] = useState('')
+  const [screeningBloodTypeSaving, setScreeningBloodTypeSaving] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -247,6 +252,47 @@ export default function DriveDetailsPage() {
       setActionError('Failed to update status')
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  const handleSaveScreeningBloodType = async () => {
+    if (!selectedDonor || !screeningBloodType) {
+      setActionError('Please select a confirmed blood type')
+      return
+    }
+
+    setScreeningBloodTypeSaving(true)
+    try {
+      const res = await fetch(
+        `/api/admin/drives/${params.id}/registrations/${selectedDonor.id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            status: selectedDonor.status,
+            sendNotification: false,
+            bloodType: screeningBloodType,
+          }),
+        }
+      )
+
+      if (res.ok) {
+        const data = await res.json()
+        const updatedBloodType = data.data?.bloodType || screeningBloodType
+        setActionSuccess(`✅ Blood type confirmed: ${updatedBloodType}`)
+        setSelectedDonor({ ...selectedDonor, bloodType: updatedBloodType })
+        setScreeningBloodType('')
+        fetchDriveDetails()
+        setTimeout(() => setActionSuccess(null), 3000)
+      } else {
+        const data = await res.json()
+        setActionError(data.error || 'Failed to save blood type')
+      }
+    } catch {
+      setActionError('Failed to save blood type')
+    } finally {
+      setScreeningBloodTypeSaving(false)
     }
   }
 
@@ -515,6 +561,25 @@ export default function DriveDetailsPage() {
     )
   }
 
+  const getRoleBadge = (participantRole, intendedDonationComponent) => {
+    if (participantRole === 'supporter') {
+      return (
+        <Badge className="bg-gradient-to-r from-amber-100 to-orange-100 text-amber-900 border border-amber-300 font-medium">
+          <Megaphone className="w-3 h-3 mr-1" />
+          Supporter
+        </Badge>
+      )
+    }
+    const componentLabel =
+      DONATION_COMPONENTS[intendedDonationComponent]?.shortLabel || 'Whole blood'
+    return (
+      <Badge className="bg-red-50 text-red-800 border border-red-200 text-xs font-medium">
+        <Droplet className="w-3 h-3 mr-1" />
+        {componentLabel}
+      </Badge>
+    )
+  }
+
   const getBloodTypeBadge = (bloodType) => {
     const style = bloodTypeStyles[bloodType] || bloodTypeStyles.unknown
     return (
@@ -532,16 +597,21 @@ export default function DriveDetailsPage() {
     const matchesStatus = statusFilter === 'all' || r.status === statusFilter
     const matchesBloodType = bloodTypeFilter === 'all' || r.bloodType === bloodTypeFilter
     const matchesSource = sourceFilter === 'all' || (r.source || 'public') === sourceFilter
-    return matchesSearch && matchesStatus && matchesBloodType && matchesSource
+    const role = r.participantRole || 'donor'
+    const matchesRole = roleFilter === 'all' || role === roleFilter
+    return matchesSearch && matchesStatus && matchesBloodType && matchesSource && matchesRole
   })
 
   const rosterForStats = registrations.filter((r) => r.status !== 'declined')
-  const pendingCheckIn = rosterForStats.filter((r) =>
+  const donorRoster = rosterForStats.filter((r) => (r.participantRole || 'donor') === 'donor')
+  const pendingCheckIn = donorRoster.filter((r) =>
     ['registered', 'confirmed'].includes(r.status)
   ).length
 
   const stats = {
     total: rosterForStats.length,
+    supporters: rosterForStats.filter((r) => r.participantRole === 'supporter').length,
+    donors: donorRoster.length,
     declined: registrations.filter((r) => r.status === 'declined').length,
     checkedIn: rosterForStats.filter(r => r.status === 'checked_in').length,
     noShow: rosterForStats.filter(r => r.status === 'no_show').length,
@@ -552,11 +622,11 @@ export default function DriveDetailsPage() {
   }
 
   const progressPercentage = drive?.targetDonors > 0 
-    ? Math.round((stats.total / drive.targetDonors) * 100) 
+    ? Math.round((stats.donors / drive.targetDonors) * 100) 
     : 0
 
-  const showRate = stats.total > 0 
-    ? Math.round((stats.checkedIn / stats.total) * 100) 
+  const showRate = stats.donors > 0 
+    ? Math.round((stats.checkedIn / stats.donors) * 100) 
     : 0
 
   if (loading) {
@@ -672,7 +742,7 @@ export default function DriveDetailsPage() {
                 style={{ width: `${Math.min(progressPercentage, 100)}%` }}
               >
                 <span className="text-xs font-bold text-white">
-                  {stats.total}/{drive.targetDonors}
+                  {stats.donors}/{drive.targetDonors} donors
                 </span>
               </div>
             </div>
@@ -692,9 +762,15 @@ export default function DriveDetailsPage() {
             <CardContent>
               <div className="text-4xl font-bold text-blue-600">{stats.total}</div>
               <p className="text-xs text-gray-500 mt-2">
+                {stats.donors} donors
+                {stats.supporters > 0 && (
+                  <span className="text-amber-700 font-medium"> · {stats.supporters} supporters</span>
+                )}
+              </p>
+              <p className="text-xs text-gray-500">
                 {drive.targetDonors > 0 ? (
                   <>
-                    <span className="font-semibold">{progressPercentage}%</span> of target ({drive.targetDonors})
+                    <span className="font-semibold">{progressPercentage}%</span> of donor target ({drive.targetDonors})
                   </>
                 ) : 'No target set'}
               </p>
@@ -875,6 +951,15 @@ export default function DriveDetailsPage() {
                   <option value="admin">Admin</option>
                 </select>
                 <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="px-4 py-2 border border-border rounded-lg bg-background text-foreground"
+                >
+                  <option value="all">All roles</option>
+                  <option value="donor">Donors</option>
+                  <option value="supporter">Supporters</option>
+                </select>
+                <select
                   value={bloodTypeFilter}
                   onChange={(e) => setBloodTypeFilter(e.target.value)}
                   className="px-4 py-2 border border-border rounded-lg bg-background text-foreground"
@@ -932,7 +1017,8 @@ export default function DriveDetailsPage() {
                                   Walk-in
                                 </Badge>
                               )}
-                              {getBloodTypeBadge(reg.bloodType)}
+                              {getRoleBadge(reg.participantRole, reg.intendedDonationComponent)}
+                              {reg.participantRole !== 'supporter' && getBloodTypeBadge(reg.bloodType)}
                               {getStatusBadge(reg.status)}
                             </div>
                             <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
@@ -1048,8 +1134,9 @@ export default function DriveDetailsPage() {
                     </div>
                     <div className="min-w-0">
                       <SheetTitle className="text-xl font-bold break-words sm:text-2xl">{selectedDonor.fullName}</SheetTitle>
-                      <div className="flex items-center gap-2 mt-2">
-                        {getBloodTypeBadge(selectedDonor.bloodType)}
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {getRoleBadge(selectedDonor.participantRole, selectedDonor.intendedDonationComponent)}
+                        {selectedDonor.participantRole !== 'supporter' && getBloodTypeBadge(selectedDonor.bloodType)}
                         {getStatusBadge(selectedDonor.status)}
                       </div>
                     </div>
@@ -1128,6 +1215,61 @@ export default function DriveDetailsPage() {
                 </div>
               </div>
 
+              {selectedDonor &&
+                (!selectedDonor.bloodType || selectedDonor.bloodType === 'unknown') &&
+                ['confirmed', 'checked_in'].includes(selectedDonor.status) && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4">
+                    <h4 className="font-semibold mb-2 flex items-center gap-2 text-amber-900">
+                      <Droplet className="w-5 h-5 text-amber-700" />
+                      Screening — confirm blood type
+                    </h4>
+                    <p className="text-sm text-amber-800 mb-3">
+                      Donor registered without a known blood group. Confirm during screening before
+                      collection.
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <select
+                        value={screeningBloodType}
+                        onChange={(e) => setScreeningBloodType(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        disabled={screeningBloodTypeSaving}
+                      >
+                        <option value="">Select confirmed blood type…</option>
+                        {CONFIRMED_BLOOD_TYPES.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        onClick={handleSaveScreeningBloodType}
+                        disabled={!screeningBloodType || screeningBloodTypeSaving}
+                        className="shrink-0 bg-amber-700 hover:bg-amber-800"
+                      >
+                        {screeningBloodTypeSaving ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4 mr-2" />
+                        )}
+                        {screeningBloodTypeSaving ? 'Saving…' : 'Save blood type'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+              {selectedDonor.participantRole === 'supporter' && (
+                <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4">
+                  <h4 className="font-semibold text-amber-900 flex items-center gap-2 mb-2">
+                    <Megaphone className="w-5 h-5" />
+                    Drive supporter
+                  </h4>
+                  <p className="text-sm text-amber-800 leading-relaxed">
+                    This person registered to help share the drive — not to donate blood. They are excluded
+                    from check-in and collection workflows.
+                  </p>
+                </div>
+              )}
+
               {/* Quick Actions */}
               <div>
                 <h4 className="font-semibold mb-3 flex items-center gap-2">
@@ -1139,7 +1281,11 @@ export default function DriveDetailsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'confirmed')}
-                    disabled={selectedDonor.status !== 'registered' || actionLoading}
+                    disabled={
+                      selectedDonor.participantRole === 'supporter' ||
+                      selectedDonor.status !== 'registered' ||
+                      actionLoading
+                    }
                     className="justify-start"
                     title={selectedDonor.status === 'registered' ? 'Mark as confirmed' : `Already ${selectedDonor.status}`}
                   >
@@ -1154,7 +1300,11 @@ export default function DriveDetailsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleStatusChange(selectedDonor.id, 'checked_in')}
-                    disabled={!['registered', 'confirmed'].includes(selectedDonor.status) || actionLoading}
+                    disabled={
+                      selectedDonor.participantRole === 'supporter' ||
+                      !['registered', 'confirmed'].includes(selectedDonor.status) ||
+                      actionLoading
+                    }
                     className="justify-start"
                     title={selectedDonor.status !== 'checked_in' && selectedDonor.status !== 'completed' ? 'Mark as checked in' : `Already ${selectedDonor.status}`}
                   >
@@ -1197,8 +1347,8 @@ export default function DriveDetailsPage() {
                   </Button>
                 </div>
 
-                {/* Record Donation - Only for checked_in donors */}
-                {selectedDonor.status === 'checked_in' && (
+                {/* Record Donation - Only for checked_in donors (not supporters) */}
+                {selectedDonor.status === 'checked_in' && selectedDonor.participantRole !== 'supporter' && (
                   <div className="mt-3 pt-3 border-t">
                     <Button
                       onClick={() => handleOpenRecordDonation(selectedDonor)}

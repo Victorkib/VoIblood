@@ -13,6 +13,10 @@ import {
   resolveParticipantForAdmin,
   syncDonorWithParticipant,
 } from '@/lib/drive-participant-helpers'
+import {
+  isConfirmedBloodType,
+  normalizeDonorBloodType,
+} from '@/lib/donor-blood-types'
 
 export async function POST(request, { params }) {
   try {
@@ -35,6 +39,9 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
+    const body = await request.json().catch(() => ({}))
+    const { bloodType: bloodTypeInput } = body
+
     const participant = await resolveParticipantForAdmin(drive, registrationId)
     if (!participant) {
       return NextResponse.json({ error: 'Donor registration not found' }, { status: 404 })
@@ -44,7 +51,21 @@ export async function POST(request, { params }) {
     await participant.save()
 
     const donor = await Donor.findById(participant.donorId._id || participant.donorId)
+    let bloodTypeUpdated = false
     if (donor) {
+      if (bloodTypeInput != null) {
+        const normalizedBloodType = normalizeDonorBloodType(bloodTypeInput, donor.bloodType)
+        if (!isConfirmedBloodType(normalizedBloodType)) {
+          return NextResponse.json(
+            { error: 'A confirmed blood type is required (not unknown)' },
+            { status: 400 }
+          )
+        }
+        donor.bloodType = normalizedBloodType
+        await donor.save()
+        bloodTypeUpdated = true
+      }
+
       await syncDonorWithParticipant(donor, participant, drive)
     }
 
@@ -57,6 +78,8 @@ export async function POST(request, { params }) {
         participantId: participant._id.toString(),
         donorId: donor?._id?.toString(),
         status: participant.status,
+        bloodType: donor?.bloodType,
+        bloodTypeUpdated,
       },
     })
   } catch (error) {
